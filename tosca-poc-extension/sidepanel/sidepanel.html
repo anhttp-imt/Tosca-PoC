@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<title>Tosca PoC</title>
+<link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Tosca PoC</h1>
+    <span class="subtitle">Object Identification (Scan)</span>
+  </header>
+
+  <main>
+    <div class="ext-id-row">
+      <span class="hint">Extension ID (dán vào Web App để kết nối):</span>
+      <div class="ext-id-copy">
+        <code id="ext-id"></code>
+        <button id="btn-copy-id" class="btn btn-ghost">Copy</button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button id="btn-scan-toggle" class="btn btn-primary">Bắt đầu Scan</button>
+    </div>
+    <p class="hint">Bật Scan rồi di chuột / click vào element trên trang đang mở để capture vào Object Repository. Test Builder / Record / Run / Report giờ nằm ở Web App riêng (xem README).</p>
+
+    <ul id="object-list" class="item-list"></ul>
+    <p id="object-empty" class="empty-hint">Chưa có object nào.</p>
+  </main>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
