@@ -163,6 +163,17 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function parseKeySequence(str) {
+    // Parse {Enter}{Tab}F5{F5} into ['Enter', 'Tab', 'F5', 'F5']
+    const keys = [];
+    const regex = /\{([^}]+)\}|(.)/g;
+    let match;
+    while ((match = regex.exec(str)) !== null) {
+      keys.push(match[1] || match[2]);
+    }
+    return keys;
+  }
+
   function setNativeValue(el, value) {
     const proto = Object.getPrototypeOf(el);
     const desc = Object.getOwnPropertyDescriptor(proto, 'value');
@@ -172,29 +183,81 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function scrollElementIntoView(el) {
+    // First scroll the window to the element
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+
+    // Then scroll all parent containers that might clip the element
+    let node = el.parentElement;
+    while (node) {
+      const style = window.getComputedStyle(node);
+      const overflow = style.overflow || style.overflowY;
+      if (overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') {
+        const rect = node.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        // If element is outside visible area of this container
+        if (elRect.top < rect.top || elRect.bottom > rect.bottom) {
+          const scrollTop = el.offsetTop - node.offsetTop - rect.height / 2;
+          node.scrollTop = Math.max(0, scrollTop);
+        }
+      }
+      // Stop at fixed/sticky positioned ancestors or body
+      if (node === document.body || node === document.documentElement) break;
+      if (style.position === 'fixed') break;
+      node = node.parentElement;
+    }
+
+    // Final scroll to ensure element is visible
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+  }
+
   async function executeStep(step, selectors) {
     ensureRunOverlay();
-    const el = ToscaSelectorUtils.findElement(selectors || {});
+
+    // Retry finding element (handles late-loading SPA content)
+    let el = ToscaSelectorUtils.findElement(selectors || {});
+    let attempts = 0;
+    const maxAttempts = 20; // up to 4 seconds
+    while (!el && attempts < maxAttempts) {
+      await sleep(200);
+      el = ToscaSelectorUtils.findElement(selectors || {});
+      attempts++;
+    }
+
     if (!el) {
       return {
         status: 'fail',
         message: `Không tìm thấy element (selector: ${ToscaSelectorUtils.pickBestSelector(selectors || {})})`,
       };
     }
-    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    // Scroll through all parent containers that might be clipping the element
+    scrollElementIntoView(el);
     positionOverlay(el, runOverlayEl, null);
-    await sleep(150);
+    await sleep(300);
 
     try {
       switch (step.action) {
-        case 'click':
-          el.click();
+        case 'click': {
+          const rect = el.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: cx, clientY: cy, buttons: 0 }));
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: cx, clientY: cy, buttons: 0 }));
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: cx, clientY: cy, buttons: 0 }));
           break;
-        case 'input':
+        }
+        case 'input': {
+          let inputValue = step.value ?? '';
+          if (inputValue.endsWith('{Enter}')) inputValue = inputValue.slice(0, -7);
           el.focus();
-          setNativeValue(el, step.value ?? '');
+          setNativeValue(el, inputValue);
+          // Always dispatch Enter to commit value in SAP UI
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
           el.blur();
           break;
+        }
         case 'select':
           el.value = step.value ?? '';
           el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -210,6 +273,34 @@
         case 'wait':
           await sleep(step.waitMs || 500);
           break;
+        case 'sendkey': {
+          const keyStr = step.value ?? '';
+          const keys = parseKeySequence(keyStr);
+          for (const key of keys) {
+            // Handle special keys that need direct actions (browser blocks default behavior for programmatic events)
+            if (key === 'F5') {
+              location.reload();
+              await sleep(200);
+              continue;
+            }
+            if (key === 'Tab') {
+              // Tab changes focus - dispatch to document level
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+              document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Tab', bubbles: true }));
+              await sleep(100);
+              continue;
+            }
+            // For other keys, dispatch to activeElement, document, and window
+            const targets = [document.activeElement, document, window].filter(Boolean);
+            for (const target of targets) {
+              target.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true }));
+              target.dispatchEvent(new KeyboardEvent('keypress', { key, code: key, bubbles: true }));
+              target.dispatchEvent(new KeyboardEvent('keyup', { key, code: key, bubbles: true }));
+            }
+            await sleep(100);
+          }
+          break;
+        }
         default:
           return { status: 'fail', message: `Action không hỗ trợ: ${step.action}` };
       }
@@ -250,6 +341,9 @@
       case 'BG_EXECUTE_STEP':
         executeStep(message.step, message.selectors).then(sendResponse);
         return true; // keep the message channel open for the async response
+      case 'BG_CHECK_ELEMENT':
+        sendResponse({ found: !!ToscaSelectorUtils.findElement(message.selectors || {}) });
+        return;
       default:
         return;
     }

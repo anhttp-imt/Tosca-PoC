@@ -8,6 +8,7 @@
     activeSuiteId: null,
     scanning: false, // unused here, kept for parity with step summary helpers
     recording: false,
+    running: false,
     suiteRun: null, // { suiteRunId, testCaseIds, statuses: { [testCaseId]: 'pending'|'running'|'pass'|'fail' } }
   };
 
@@ -113,6 +114,8 @@
         break;
       }
       case 'WA_EVT_RUN_STARTED':
+        state.running = true;
+        setRunButtonsState(true);
         renderRunSteps();
         break;
       case 'WA_EVT_STEP_RUNNING':
@@ -122,11 +125,14 @@
         updateRunStepStatus(message.stepId, message.status, message.message);
         break;
       case 'WA_EVT_RUN_FINISHED':
+        state.running = false;
+        setRunButtonsState(false);
         state.reports.unshift(message.report);
         renderReports();
         break;
       case 'WA_EVT_SUITE_STARTED': {
-        const statuses = {};
+        state.running = true;
+        setRunButtonsState(true);
         (message.testCaseIds || []).forEach((id) => { statuses[id] = 'pending'; });
         state.suiteRun = { suiteRunId: message.suiteRunId, testCaseIds: message.testCaseIds || [], statuses };
         renderSuiteProgressList();
@@ -144,8 +150,14 @@
         break;
       }
       case 'WA_EVT_SUITE_FINISHED':
+        state.running = false;
+        setRunButtonsState(false);
         // Trạng thái từng test case đã được cập nhật qua WA_EVT_SUITE_TESTCASE_FINISHED;
         // chi tiết report của từng test case xem ở tab Report (nhóm theo suite).
+        break;
+      case 'WA_EVT_DATA_CHANGED':
+        // Extension báo data đã thay đổi (từ side panel hoặc web app khác) — tự động re-fetch
+        sendToExtension('WA_GET_ALL_DATA');
         break;
       default:
         break;
@@ -234,13 +246,14 @@
   }
 
   function actionLabel(action) {
-    return { click: 'Click', input: 'Input', select: 'Select', verify: 'Verify Text', wait: 'Wait' }[action] || action;
+    return { click: 'Click', input: 'Input', select: 'Select', verify: 'Verify Text', wait: 'Wait', sendkey: 'Send Key' }[action] || action;
   }
 
   function stepSummary(step) {
     const obj = getObject(step.objectId);
-    const objName = obj ? obj.name : step.action === 'wait' ? '(no target)' : '(object đã bị xóa)';
+    const objName = obj ? obj.name : step.action === 'wait' || step.action === 'sendkey' ? '(no target)' : '(object đã bị xóa)';
     if (step.action === 'wait') return `Wait ${step.waitMs || step.value || 500}ms`;
+    if (step.action === 'sendkey') return `Send Key "${step.value ?? ''}"`;
     if (step.action === 'verify') return `Verify "${objName}" == "${step.expectedValue ?? step.value ?? ''}"`;
     if (step.action === 'input' || step.action === 'select') return `${actionLabel(step.action)} "${objName}" = "${step.value ?? ''}"`;
     return `${actionLabel(step.action)} "${objName}"`;
@@ -261,19 +274,32 @@
     steps.forEach((step, idx) => {
       const li = document.createElement('li');
       li.className = 'item-card';
+      li.draggable = true;
+      li.dataset.stepIndex = idx;
       li.innerHTML = `
         <div class="item-card-row">
+          <span class="drag-handle" title="Kéo để thay đổi vị trí">☰</span>
           <span class="item-title">${idx + 1}. ${escapeHtml(stepSummary(step))}</span>
           <span class="item-actions">
             <button data-action="up" title="Lên">↑</button>
             <button data-action="down" title="Xuống">↓</button>
+            <button data-action="edit" title="Chỉnh sửa">✏️</button>
             <button data-action="delete" title="Xóa">🗑</button>
           </span>
         </div>
       `;
       li.querySelector('[data-action="up"]').addEventListener('click', () => moveStep(idx, -1));
       li.querySelector('[data-action="down"]').addEventListener('click', () => moveStep(idx, 1));
+      li.querySelector('[data-action="edit"]').addEventListener('click', () => openStepEditModal(idx));
       li.querySelector('[data-action="delete"]').addEventListener('click', () => deleteStep(idx));
+
+      // Drag and drop events
+      li.addEventListener('dragstart', handleDragStart);
+      li.addEventListener('dragend', handleDragEnd);
+      li.addEventListener('dragover', handleDragOver);
+      li.addEventListener('dragleave', handleDragLeave);
+      li.addEventListener('drop', handleDrop);
+
       els.stepList.appendChild(li);
     });
   }
@@ -304,10 +330,147 @@
     persistActiveTestCase();
   }
 
+  // ---------------- Drag and Drop ----------------
+
+  let dragSrcIndex = null;
+
+  function handleDragStart(e) {
+    dragSrcIndex = parseInt(this.dataset.stepIndex, 10);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragSrcIndex);
+  }
+
+  function handleDragEnd(e) {
+    this.classList.remove('dragging');
+    // Clear all drag-over indicators
+    els.stepList.querySelectorAll('.item-card').forEach((card) => {
+      card.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    dragSrcIndex = null;
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    // Remove previous indicators from all cards
+    els.stepList.querySelectorAll('.item-card').forEach((card) => {
+      card.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    const rect = this.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    if (e.clientY < midY) {
+      this.classList.add('drag-over-top');
+    } else {
+      this.classList.add('drag-over-bottom');
+    }
+  }
+
+  function handleDragLeave(e) {
+    this.classList.remove('drag-over-top', 'drag-over-bottom');
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    const destIndex = parseInt(this.dataset.stepIndex, 10);
+    if (dragSrcIndex === null || dragSrcIndex === destIndex) return;
+
+    const tc = getTestCase(state.activeTestCaseId);
+    if (!tc) return;
+
+    const rect = this.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    // If dropping below the card, insert after; otherwise insert before
+    const insertIndex = e.clientY < midY ? destIndex : destIndex + 1;
+
+    const [item] = tc.steps.splice(dragSrcIndex, 1);
+    // Adjust index if source was before destination
+    const adjustedInsertIndex = dragSrcIndex < insertIndex ? insertIndex - 1 : insertIndex;
+    tc.steps.splice(adjustedInsertIndex, 0, item);
+
+    renderSteps();
+    persistActiveTestCase();
+  }
+
+  // ---------------- Step Edit Modal ----------------
+
+  let editingStepIndex = null;
+
+  function openStepEditModal(idx) {
+    const tc = getTestCase(state.activeTestCaseId);
+    if (!tc) return;
+    const step = tc.steps[idx];
+    editingStepIndex = idx;
+
+    // Populate object select
+    els.editStepObjectSelect.innerHTML = '';
+    if (state.objects.length === 0) {
+      const opt = document.createElement('option');
+      opt.textContent = '(chưa có object)';
+      opt.value = '';
+      els.editStepObjectSelect.appendChild(opt);
+    } else {
+      state.objects.forEach((obj) => {
+        const opt = document.createElement('option');
+        opt.value = obj.id;
+        opt.textContent = obj.name;
+        if (obj.id === step.objectId) opt.selected = true;
+        els.editStepObjectSelect.appendChild(opt);
+      });
+    }
+
+    // Set action
+    els.editStepActionSelect.value = step.action;
+
+    // Set value based on action
+    let value = '';
+    if (step.action === 'input' || step.action === 'select') value = step.value ?? '';
+    else if (step.action === 'verify') value = step.expectedValue ?? '';
+    else if (step.action === 'wait') value = String(step.waitMs ?? 500);
+    els.editStepValueInput.value = value;
+
+    els.stepEditOverlay.classList.add('active');
+  }
+
+  function closeStepEditModal() {
+    els.stepEditOverlay.classList.remove('active');
+    editingStepIndex = null;
+  }
+
+  function saveStepEdit() {
+    const tc = getTestCase(state.activeTestCaseId);
+    if (!tc || editingStepIndex === null) return;
+
+    const step = tc.steps[editingStepIndex];
+    const action = els.editStepActionSelect.value;
+    const objectId = els.editStepObjectSelect.value || null;
+    const rawValue = els.editStepValueInput.value;
+
+    step.action = action;
+    step.objectId = objectId;
+    delete step.value;
+    delete step.expectedValue;
+    delete step.waitMs;
+
+    if (action === 'input' || action === 'select') step.value = rawValue;
+    if (action === 'verify') step.expectedValue = rawValue;
+    if (action === 'wait') step.waitMs = parseInt(rawValue, 10) || 500;
+    if (action === 'sendkey') step.value = rawValue;
+
+    closeStepEditModal();
+    renderSteps();
+    persistActiveTestCase();
+  }
+
   function setRecording(on) {
     state.recording = on;
     els.btnRecordToggle.textContent = on ? 'Dừng Record' : 'Bắt đầu Record';
     els.btnRecordToggle.classList.toggle('active', on);
+  }
+
+  function setRunButtonsState(isRunning) {
+    els.btnRunTestcase.disabled = isRunning;
+    els.btnCancelRun.disabled = !isRunning;
   }
 
   // ---------------- Suite Builder ----------------
@@ -599,12 +762,13 @@
       const action = els.stepActionSelect.value;
       const objectId = els.stepObjectSelect.value || null;
       const rawValue = els.stepValueInput.value;
-      if (action !== 'wait' && !objectId) { alert('Hãy scan object trong extension trước khi thêm step.'); return; }
+      if (action !== 'wait' && action !== 'sendkey' && !objectId) { alert('Hãy scan object trong extension trước khi thêm step.'); return; }
 
       const step = { id: uid('step'), action, objectId };
       if (action === 'input' || action === 'select') step.value = rawValue;
       if (action === 'verify') step.expectedValue = rawValue;
       if (action === 'wait') step.waitMs = parseInt(rawValue, 10) || 500;
+      if (action === 'sendkey') step.value = rawValue;
 
       tc.steps.push(step);
       els.stepValueInput.value = '';
@@ -680,10 +844,50 @@
     });
 
     els.btnClearReports.addEventListener('click', () => {
-      if (!confirm('Xóa toàn bộ lịch sử report?')) return;
+      if (!confirm(
+        '🗑 Xóa lịch sử report\n\n' +
+        'Hành động này sẽ xóa toàn bộ kết quả test đã lưu (báo cáo PASS/FAIL).\n' +
+        'Các Object, Test Case và Test Suite sẽ KHÔNG bị ảnh hưởng.\n\n' +
+        'Bạn có chắc chắn muốn tiếp tục?'
+      )) return;
       sendToExtension('WA_CLEAR_REPORTS');
       state.reports = [];
       renderReports();
+    });
+
+    els.btnClearStorage.addEventListener('click', () => {
+      if (!confirm(
+        '⚠️ Xóa toàn bộ storage\n\n' +
+        'Hành động này sẽ XÓA HOÀN TOÀN tất cả dữ liệu:\n' +
+        '  • Object Repository (tất cả selectors đã scan)\n' +
+        '  • Test Cases (tất cả các test đã tạo)\n' +
+        '  • Test Suites (tất cả các suite đã cấu hình)\n' +
+        '  • Reports (tất cả kết quả test đã lưu)\n\n' +
+        'Hành động này KHÔNG THỂ HOÀN TÁC.\n\n' +
+        'Bạn có chắc chắn muốn tiếp tục?'
+      )) return;
+      sendToExtension('WA_CLEAR_ALL_STORAGE');
+      state.objects = {};
+      state.testCases = [];
+      state.testSuites = [];
+      state.reports = [];
+      renderObjects();
+      renderTestCases();
+      renderSuites();
+      renderReports();
+    });
+
+    els.btnCancelRun.addEventListener('click', () => {
+      if (!state.running) return;
+      sendToExtension('WA_CANCEL_RUN', {});
+    });
+
+    // Step edit modal events
+    els.btnModalClose.addEventListener('click', closeStepEditModal);
+    els.btnModalCancel.addEventListener('click', closeStepEditModal);
+    els.btnModalSave.addEventListener('click', saveStepEdit);
+    els.stepEditOverlay.addEventListener('click', (e) => {
+      if (e.target === els.stepEditOverlay) closeStepEditModal();
     });
   }
 
@@ -707,6 +911,13 @@
       stepActionSelect: $('step-action-select'),
       stepValueInput: $('step-value-input'),
       btnAddStep: $('btn-add-step'),
+      stepEditOverlay: $('step-edit-overlay'),
+      editStepObjectSelect: $('edit-step-object-select'),
+      editStepActionSelect: $('edit-step-action-select'),
+      editStepValueInput: $('edit-step-value-input'),
+      btnModalClose: $('btn-modal-close'),
+      btnModalCancel: $('btn-modal-cancel'),
+      btnModalSave: $('btn-modal-save'),
       suiteSelect: $('suite-select'),
       btnNewSuite: $('btn-new-suite'),
       btnDeleteSuite: $('btn-delete-suite'),
@@ -722,9 +933,11 @@
       runStepList: $('run-step-list'),
       runEmpty: $('run-empty'),
       btnRunTestcase: $('btn-run-testcase'),
+      btnCancelRun: $('btn-cancel-run'),
       reportList: $('report-list'),
       reportEmpty: $('report-empty'),
       btnClearReports: $('btn-clear-reports'),
+      btnClearStorage: $('btn-clear-storage'),
     });
 
     initTabs();

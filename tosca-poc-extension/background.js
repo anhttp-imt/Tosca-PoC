@@ -14,6 +14,7 @@ const STORAGE_KEYS = {
 
 const ALLOWED_WEBAPP_ORIGIN = 'http://localhost:8787';
 const externalPorts = new Set();
+let cancelRun = false; // flag to cancel running test case / suite
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -74,6 +75,10 @@ function broadcastToWebApps(type, payload) {
   }
 }
 
+function notifyWebAppsDataChanged() {
+  broadcastToWebApps('WA_EVT_DATA_CHANGED', {});
+}
+
 async function focusTab(tabId) {
   try {
     const tab = await chrome.tabs.update(tabId, { active: true });
@@ -83,6 +88,31 @@ async function focusTab(tabId) {
   } catch (e) {
     // tab may have been closed - ensureContentScriptInjected will fail right after and report it
   }
+}
+
+function waitForElement(tabId, selectors, timeoutMs = 10000, intervalMs = 300) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const timer = setInterval(async () => {
+      if (Date.now() - start > timeoutMs) {
+        clearInterval(timer);
+        resolve(false); // timeout
+        return;
+      }
+      try {
+        const result = await chrome.tabs.sendMessage(tabId, {
+          type: 'BG_CHECK_ELEMENT',
+          selectors,
+        });
+        if (result && result.found) {
+          clearInterval(timer);
+          resolve(true);
+        }
+      } catch (e) {
+        // content script not ready yet, keep waiting
+      }
+    }, intervalMs);
+  });
 }
 
 // suiteMeta (khi test case này được chạy như 1 phần của Suite): { suiteRunId, suiteName, index, count }
@@ -127,6 +157,7 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
   broadcastToWebApps('WA_EVT_RUN_STARTED', { testCaseId: testCase.id });
 
   for (const step of testCase.steps) {
+    if (cancelRun) break;
     const objEntry = objects.find((o) => o.id === step.objectId);
     broadcastToWebApps('WA_EVT_STEP_RUNNING', { stepId: step.id });
     const start = Date.now();
@@ -161,20 +192,41 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
       stepId: step.id,
       status: result.status,
       message: result.message,
-      screenshotDataUrl,
       durationMs: Date.now() - start,
     });
-    broadcastToWebApps('WA_EVT_STEP_RESULT', { stepId: step.id, status: result.status, message: result.message });
+    // Send screenshot to web app in real-time (not stored in chrome.storage to avoid quota exceeded)
+    broadcastToWebApps('WA_EVT_STEP_RESULT', { stepId: step.id, status: result.status, message: result.message, screenshotDataUrl });
 
     if (result.status === 'fail') report.overallStatus = 'fail';
+
+    // After click, wait for next step's element to appear AND be ready (SPA navigation)
+    if (step.action === 'click' && result.status === 'pass') {
+      const nextStep = testCase.steps[testCase.steps.indexOf(step) + 1];
+      if (nextStep && nextStep.objectId) {
+        const nextObj = objects.find((o) => o.id === nextStep.objectId);
+        if (nextObj && nextObj.selectors) {
+          await ensureContentScriptInjected(tabId);
+          // Wait for element to appear in DOM
+          await waitForElement(tabId, nextObj.selectors);
+          // Additional wait for SAP UI / SPA to finish rendering
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+    }
   }
 
-  if (report.overallStatus === 'running') report.overallStatus = 'pass';
+  if (report.overallStatus === 'running') {
+    if (cancelRun) {
+      report.overallStatus = 'cancel';
+    } else {
+      report.overallStatus = 'pass';
+    }
+  }
   report.finishedAt = Date.now();
 
   const reports = await getAll(STORAGE_KEYS.REPORTS);
   reports.unshift(report);
-  await setAll(STORAGE_KEYS.REPORTS, reports.slice(0, 50));
+  await setAll(STORAGE_KEYS.REPORTS, reports.slice(0, 20));
 
   broadcastToWebApps('WA_EVT_RUN_FINISHED', { report });
   return report.overallStatus;
@@ -196,6 +248,7 @@ async function runTestSuite(tabId, suite) {
 
   let overallStatus = 'pass';
   for (let i = 0; i < suite.testCaseIds.length; i++) {
+    if (cancelRun) break;
     const testCaseId = suite.testCaseIds[i];
     const tc = testCases.find((t) => t.id === testCaseId);
     if (!tc) {
@@ -212,6 +265,11 @@ async function runTestSuite(tabId, suite) {
       overallStatus = 'fail';
       break; // fail-fast: dung ngay, khong chay cac test case con lai
     }
+  }
+
+  if (cancelRun) {
+    overallStatus = 'cancel';
+    cancelRun = false;
   }
 
   broadcastToWebApps('WA_EVT_SUITE_FINISHED', { suiteRunId, overallStatus });
@@ -272,6 +330,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         let objects = await getAll(STORAGE_KEYS.OBJECTS);
         objects = objects.filter((o) => o.id !== message.objectId);
         await setAll(STORAGE_KEYS.OBJECTS, objects);
+        notifyWebAppsDataChanged();
         sendResponse({ ok: true });
         break;
       }
@@ -280,6 +339,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const obj = objects.find((o) => o.id === message.objectId);
         if (obj) obj.name = message.name;
         await setAll(STORAGE_KEYS.OBJECTS, objects);
+        notifyWebAppsDataChanged();
         sendResponse({ ok: true });
         break;
       }
@@ -337,12 +397,14 @@ chrome.runtime.onConnectExternal.addListener((port) => {
           if (idx >= 0) testCases[idx] = message.testCase;
           else testCases.push(message.testCase);
           await setAll(STORAGE_KEYS.TEST_CASES, testCases);
+          notifyWebAppsDataChanged();
           break;
         }
         case 'WA_DELETE_TEST_CASE': {
           let testCases = await getAll(STORAGE_KEYS.TEST_CASES);
           testCases = testCases.filter((t) => t.id !== message.testCaseId);
           await setAll(STORAGE_KEYS.TEST_CASES, testCases);
+          notifyWebAppsDataChanged();
           break;
         }
         case 'WA_SAVE_TEST_SUITE': {
@@ -351,12 +413,14 @@ chrome.runtime.onConnectExternal.addListener((port) => {
           if (idx >= 0) testSuites[idx] = message.suite;
           else testSuites.push(message.suite);
           await setAll(STORAGE_KEYS.TEST_SUITES, testSuites);
+          notifyWebAppsDataChanged();
           break;
         }
         case 'WA_DELETE_TEST_SUITE': {
           let testSuites = await getAll(STORAGE_KEYS.TEST_SUITES);
           testSuites = testSuites.filter((s) => s.id !== message.suiteId);
           await setAll(STORAGE_KEYS.TEST_SUITES, testSuites);
+          notifyWebAppsDataChanged();
           break;
         }
         case 'WA_RUN_TEST_SUITE': {
@@ -367,6 +431,7 @@ chrome.runtime.onConnectExternal.addListener((port) => {
           let objects = await getAll(STORAGE_KEYS.OBJECTS);
           objects = objects.filter((o) => o.id !== message.objectId);
           await setAll(STORAGE_KEYS.OBJECTS, objects);
+          notifyWebAppsDataChanged();
           break;
         }
         case 'WA_RENAME_OBJECT': {
@@ -374,6 +439,7 @@ chrome.runtime.onConnectExternal.addListener((port) => {
           const obj = objects.find((o) => o.id === message.objectId);
           if (obj) obj.name = message.name;
           await setAll(STORAGE_KEYS.OBJECTS, objects);
+          notifyWebAppsDataChanged();
           break;
         }
         case 'WA_START_RECORD': {
@@ -393,8 +459,16 @@ chrome.runtime.onConnectExternal.addListener((port) => {
           runTestCase(message.tabId, message.testCase);
           break;
         }
+        case 'WA_CANCEL_RUN': {
+          cancelRun = true;
+          break;
+        }
         case 'WA_CLEAR_REPORTS': {
           await setAll(STORAGE_KEYS.REPORTS, []);
+          break;
+        }
+        case 'WA_CLEAR_ALL_STORAGE': {
+          await chrome.storage.local.clear();
           break;
         }
         default:

@@ -52,6 +52,7 @@
           <option value="select">Select</option>
           <option value="verify">Verify Text</option>
           <option value="wait">Wait</option>
+          <option value="sendkey">Send Key</option>
         </select>
         <input id="step-value-input" type="text" placeholder="Giá trị / expected text / ms" />
         <button id="btn-add-step" class="btn">+ Thêm step</button>
@@ -89,6 +90,7 @@
       </div>
       <div class="toolbar">
         <button id="btn-run-testcase" class="btn btn-primary">▶ Run</button>
+        <button id="btn-cancel-run" class="btn btn-danger" disabled>⏹ Cancel</button>
       </div>
 
       <ol id="suite-progress-list" class="item-list"></ol>
@@ -99,11 +101,47 @@
     <section id="tab-report" class="tab-panel">
       <div class="toolbar">
         <button id="btn-clear-reports" class="btn btn-ghost">Xóa lịch sử</button>
+        <button id="btn-clear-storage" class="btn btn-ghost btn-danger">🗑 Xóa toàn bộ storage</button>
       </div>
       <div id="report-list"></div>
       <p id="report-empty" class="empty-hint">Chưa có lần chạy nào.</p>
     </section>
   </main>
+
+  <!-- Step Edit Modal -->
+  <div id="step-edit-overlay" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Chỉnh sửa Step</h3>
+        <button id="btn-modal-close" class="btn-ghost" title="Đóng">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label>Object</label>
+          <select id="edit-step-object-select"></select>
+        </div>
+        <div class="form-row">
+          <label>Action</label>
+          <select id="edit-step-action-select">
+            <option value="click">Click</option>
+            <option value="input">Input</option>
+            <option value="select">Select</option>
+            <option value="verify">Verify Text</option>
+            <option value="wait">Wait</option>
+            <option value="sendkey">Send Key</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Giá trị / expected text / ms</label>
+          <input id="edit-step-value-input" type="text" placeholder="Giá trị" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-modal-cancel" class="btn">Hủy</button>
+        <button id="btn-modal-save" class="btn btn-primary">Lưu</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
