@@ -132,7 +132,7 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
       finishedAt: Date.now(),
       overallStatus: 'fail',
       steps: [],
-      error: 'Khong the chay tren tab da chon (trang bi han che quyen).',
+      error: 'Cannot run on the selected tab (restricted page).',
       ...(suiteMeta ? { suiteRunId: suiteMeta.suiteRunId, suiteName: suiteMeta.suiteName, suiteIndex: suiteMeta.index, suiteCount: suiteMeta.count } : {}),
     };
     const reports = await getAll(STORAGE_KEYS.REPORTS);
@@ -167,7 +167,7 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
       await new Promise((r) => setTimeout(r, step.waitMs || 500));
       result = { status: 'pass', message: 'OK' };
     } else if (!objEntry) {
-      result = { status: 'fail', message: 'Object khong ton tai trong repository' };
+      result = { status: 'fail', message: 'Object does not exist in the repository.' };
     } else {
       try {
         result = await chrome.tabs.sendMessage(tabId, {
@@ -176,7 +176,7 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
           selectors: objEntry.selectors,
         });
       } catch (e) {
-        result = { status: 'fail', message: `Loi giao tiep voi trang: ${e.message}` };
+        result = { status: 'fail', message: `Communication error with the page: ${e.message}` };
       }
     }
 

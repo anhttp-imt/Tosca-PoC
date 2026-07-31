@@ -53,24 +53,24 @@
       port = null;
     }
     if (!window.chrome || !chrome.runtime || !chrome.runtime.connect) {
-      setConnectStatus(false, 'Trình duyệt không hỗ trợ chrome.runtime.connect');
+      setConnectStatus(false, 'Browser not supported chrome.runtime.connect');
       return;
     }
     try {
       port = chrome.runtime.connect(extId, { name: 'tosca-poc-webapp' });
     } catch (e) {
-      setConnectStatus(false, `Lỗi kết nối: ${e.message}`);
+      setConnectStatus(false, `Failed to connect: ${e.message}`);
       return;
     }
     port.onMessage.addListener(handlePortMessage);
     port.onDisconnect.addListener(() => {
       const err = chrome.runtime.lastError;
       connected = false;
-      setConnectStatus(false, err ? `Lỗi: ${err.message}` : 'Mất kết nối');
+      setConnectStatus(false, err ? `Error: ${err.message}` : 'Disconnected');
       port = null;
     });
     connected = true;
-    setConnectStatus(true, 'Đã kết nối');
+    setConnectStatus(true, 'Connected');
     localStorage.setItem('tosca_ext_id', extId);
     sendToExtension('WA_LIST_TABS');
     sendToExtension('WA_GET_ALL_DATA');
@@ -169,7 +169,7 @@
     els.targetTabSelect.innerHTML = '';
     if (tabs.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(không có tab nào)';
+      opt.textContent = '(No tab)';
       opt.value = '';
       els.targetTabSelect.appendChild(opt);
       return;
@@ -232,7 +232,7 @@
     els.stepObjectSelect.innerHTML = '';
     if (state.objects.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(chưa có object - hãy Scan trong extension trước)';
+      opt.textContent = '(No Object - Please scan in the extension first.)';
       opt.value = '';
       els.stepObjectSelect.appendChild(opt);
       return;
@@ -251,7 +251,7 @@
 
   function stepSummary(step) {
     const obj = getObject(step.objectId);
-    const objName = obj ? obj.name : step.action === 'wait' || step.action === 'sendkey' ? '(no target)' : '(object đã bị xóa)';
+    const objName = obj ? obj.name : step.action === 'wait' || step.action === 'sendkey' ? '(no target)' : '(Object is deleted)';
     if (step.action === 'wait') return `Wait ${step.waitMs || step.value || 500}ms`;
     if (step.action === 'sendkey') return `Send Key "${step.value ?? ''}"`;
     if (step.action === 'verify') return `Verify "${objName}" == "${step.expectedValue ?? step.value ?? ''}"`;
@@ -278,13 +278,13 @@
       li.dataset.stepIndex = idx;
       li.innerHTML = `
         <div class="item-card-row">
-          <span class="drag-handle" title="Kéo để thay đổi vị trí">☰</span>
+          <span class="drag-handle" title="Drag to reorder">☰</span>
           <span class="item-title">${idx + 1}. ${escapeHtml(stepSummary(step))}</span>
           <span class="item-actions">
-            <button data-action="up" title="Lên">↑</button>
-            <button data-action="down" title="Xuống">↓</button>
-            <button data-action="edit" title="Chỉnh sửa">✏️</button>
-            <button data-action="delete" title="Xóa">🗑</button>
+            <button data-action="up" title="Up">↑</button>
+            <button data-action="down" title="Down">↓</button>
+            <button data-action="edit" title="Edit">✏️</button>
+            <button data-action="delete" title="Delete">🗑</button>
           </span>
         </div>
       `;
@@ -464,7 +464,7 @@
 
   function setRecording(on) {
     state.recording = on;
-    els.btnRecordToggle.textContent = on ? 'Dừng Record' : 'Bắt đầu Record';
+    els.btnRecordToggle.textContent = on ? 'Stop Record' : 'Start Record';
     els.btnRecordToggle.classList.toggle('active', on);
   }
 
@@ -528,14 +528,14 @@
       const tc = getTestCase(tcId);
       const li = document.createElement('li');
       li.className = 'item-card';
-      const label = tc ? `${tc.name} (${tc.steps.length} step)` : '(test case đã bị xóa)';
+      const label = tc ? `${tc.name} (${tc.steps.length} step)` : '(Tescase is deleted!)';
       li.innerHTML = `
         <div class="item-card-row">
           <span class="item-title">${idx + 1}. ${escapeHtml(label)}</span>
           <span class="item-actions">
-            <button data-action="up" title="Lên">↑</button>
-            <button data-action="down" title="Xuống">↓</button>
-            <button data-action="delete" title="Xóa khỏi suite">🗑</button>
+            <button data-action="up" title="Up">↑</button>
+            <button data-action="down" title="Down">↓</button>
+            <button data-action="delete" title="Delete">🗑</button>
           </span>
         </div>
       `;
@@ -583,7 +583,7 @@
       li.dataset.suiteTestcaseId = tcId;
       li.innerHTML = `
         <div class="item-card-row">
-          <span class="item-title">${idx + 1}. ${escapeHtml(tc ? tc.name : '(test case đã bị xóa)')}</span>
+          <span class="item-title">${idx + 1}. ${escapeHtml(tc ? tc.name : '(Tescase is deleted!)')}</span>
           <span class="status-chip status-${status}">${status}</span>
         </div>
       `;
@@ -716,12 +716,12 @@
     });
 
     els.btnRefreshTabs.addEventListener('click', () => {
-      if (!connected) { alert('Hãy Connect trước.'); return; }
+      if (!connected) { alert('Please connect the Web App'); return; }
       sendToExtension('WA_LIST_TABS');
     });
 
     els.btnNewTestcase.addEventListener('click', () => {
-      const name = prompt('Tên test case mới:', `Test case ${state.testCases.length + 1}`);
+      const name = prompt('TC Name:', `Test case ${state.testCases.length + 1}`);
       if (!name) return;
       const tc = { id: uid('tc'), name, steps: [], createdAt: Date.now() };
       state.testCases.push(tc);
@@ -739,7 +739,7 @@
 
     els.btnDeleteTestcase.addEventListener('click', () => {
       const tc = getTestCase(state.activeTestCaseId);
-      if (!tc || !confirm(`Xóa test case "${tc.name}"?`)) return;
+      if (!tc || !confirm(`Delete Test Case "${tc.name}"?`)) return;
       sendToExtension('WA_DELETE_TEST_CASE', { testCaseId: tc.id });
       state.testCases = state.testCases.filter((t) => t.id !== tc.id);
       state.activeTestCaseId = null;
@@ -748,9 +748,9 @@
     });
 
     els.btnRecordToggle.addEventListener('click', () => {
-      if (!connected) { alert('Hãy Connect tới extension trước.'); return; }
+      if (!connected) { alert('Please connect to extension!'); return; }
       const tabId = getTargetTabId();
-      if (!tabId) { alert('Hãy chọn Target Tab trước.'); return; }
+      if (!tabId) { alert('Choose Target Tab'); return; }
       if (!state.activeTestCaseId) return;
       setRecording(!state.recording);
       sendToExtension(state.recording ? 'WA_START_RECORD' : 'WA_STOP_RECORD', { tabId });
@@ -758,11 +758,11 @@
 
     els.btnAddStep.addEventListener('click', () => {
       const tc = getTestCase(state.activeTestCaseId);
-      if (!tc) { alert('Hãy chọn hoặc tạo test case trước.'); return; }
+      if (!tc) { alert('Please select or create new testcase!'); return; }
       const action = els.stepActionSelect.value;
       const objectId = els.stepObjectSelect.value || null;
       const rawValue = els.stepValueInput.value;
-      if (action !== 'wait' && action !== 'sendkey' && !objectId) { alert('Hãy scan object trong extension trước khi thêm step.'); return; }
+      if (action !== 'wait' && action !== 'sendkey' && !objectId) { alert('Please scan in the extension first!'); return; }
 
       const step = { id: uid('step'), action, objectId };
       if (action === 'input' || action === 'select') step.value = rawValue;
@@ -803,7 +803,7 @@
 
     els.btnDeleteSuite.addEventListener('click', () => {
       const suite = getSuite(state.activeSuiteId);
-      if (!suite || !confirm(`Xóa suite "${suite.name}"?`)) return;
+      if (!suite || !confirm(`Delete Suite "${suite.name}"?`)) return;
       sendToExtension('WA_DELETE_TEST_SUITE', { suiteId: suite.id });
       state.testSuites = state.testSuites.filter((s) => s.id !== suite.id);
       state.activeSuiteId = null;
@@ -813,22 +813,22 @@
 
     els.btnSuiteAddTestcase.addEventListener('click', () => {
       const suite = getSuite(state.activeSuiteId);
-      if (!suite) { alert('Hãy chọn hoặc tạo suite trước.'); return; }
+      if (!suite) { alert('Please select or create suite!'); return; }
       const tcId = els.suiteAddTestcaseSelect.value;
-      if (!tcId) { alert('Hãy tạo test case ở Test Builder trước.'); return; }
+      if (!tcId) { alert('Please create testcase in Test Builder!'); return; }
       suite.testCaseIds.push(tcId);
       renderSuiteItems();
       persistActiveSuite();
     });
 
     els.btnRunTestcase.addEventListener('click', () => {
-      if (!connected) { alert('Hãy Connect tới extension trước.'); return; }
+      if (!connected) { alert('Please connect to extension!'); return; }
       const tabId = getTargetTabId();
       if (!tabId) { alert('Hãy chọn Target Tab trước.'); return; }
 
       if (els.runModeSelect.value === 'suite') {
         const suite = getSuite(els.runSuiteSelect.value);
-        if (!suite || suite.testCaseIds.length === 0) { alert('Suite rỗng hoặc chưa chọn.'); return; }
+        if (!suite || suite.testCaseIds.length === 0) { alert('No suite selected'); return; }
         els.suiteProgressList.innerHTML = '';
         els.runStepList.innerHTML = '';
         sendToExtension('WA_RUN_TEST_SUITE', { tabId, suite });
@@ -836,7 +836,7 @@
       }
 
       const tc = getTestCase(els.runTestcaseSelect.value);
-      if (!tc || tc.steps.length === 0) { alert('Test case rỗng hoặc chưa chọn.'); return; }
+      if (!tc || tc.steps.length === 0) { alert('No test cas selected'); return; }
       state.suiteRun = null;
       els.suiteProgressList.innerHTML = '';
       renderRunSteps();
@@ -845,10 +845,10 @@
 
     els.btnClearReports.addEventListener('click', () => {
       if (!confirm(
-        '🗑 Xóa lịch sử report\n\n' +
-        'Hành động này sẽ xóa toàn bộ kết quả test đã lưu (báo cáo PASS/FAIL).\n' +
-        'Các Object, Test Case và Test Suite sẽ KHÔNG bị ảnh hưởng.\n\n' +
-        'Bạn có chắc chắn muốn tiếp tục?'
+        '🗑 Delete report history\n\n' +
+        'This will delete all saved test results (PASS/FAIL).\n' +
+        'Objects, Test Cases, and Test Suites remain unaffected.\n\n' +
+        'Are you sure you want to continue?'
       )) return;
       sendToExtension('WA_CLEAR_REPORTS');
       state.reports = [];
@@ -857,14 +857,14 @@
 
     els.btnClearStorage.addEventListener('click', () => {
       if (!confirm(
-        '⚠️ Xóa toàn bộ storage\n\n' +
-        'Hành động này sẽ XÓA HOÀN TOÀN tất cả dữ liệu:\n' +
-        '  • Object Repository (tất cả selectors đã scan)\n' +
-        '  • Test Cases (tất cả các test đã tạo)\n' +
-        '  • Test Suites (tất cả các suite đã cấu hình)\n' +
-        '  • Reports (tất cả kết quả test đã lưu)\n\n' +
-        'Hành động này KHÔNG THỂ HOÀN TÁC.\n\n' +
-        'Bạn có chắc chắn muốn tiếp tục?'
+        '⚠️ Delete all storages\n\n' +
+        'This action will permanently delete all data:\n' +
+        '  • Object Repository (all scanned selectors)\n' +
+        '  • Test Cases (all created tests)\n' +
+        '  • Test Suites (all configured suites)\n' +
+        '  • Reports (all saved test results)\n\n' +
+        'This action CANNOT be undone.\n\n' +
+        'Are you sure you want to continue?'
       )) return;
       sendToExtension('WA_CLEAR_ALL_STORAGE');
       state.objects = {};
