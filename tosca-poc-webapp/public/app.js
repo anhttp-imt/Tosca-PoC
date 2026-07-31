@@ -204,7 +204,7 @@
       sel.innerHTML = '';
       if (state.testCases.length === 0) {
         const opt = document.createElement('option');
-        opt.textContent = '(chưa có test case)';
+        opt.textContent = '(No Test Case)';
         opt.value = '';
         sel.appendChild(opt);
       } else {
@@ -406,7 +406,7 @@
     els.editStepObjectSelect.innerHTML = '';
     if (state.objects.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(chưa có object)';
+      opt.textContent = '(No Object)';
       opt.value = '';
       els.editStepObjectSelect.appendChild(opt);
     } else {
@@ -481,7 +481,7 @@
       sel.innerHTML = '';
       if (state.testSuites.length === 0) {
         const opt = document.createElement('option');
-        opt.textContent = '(chưa có suite)';
+        opt.textContent = '(No Suite)';
         opt.value = '';
         sel.appendChild(opt);
       } else {
@@ -505,7 +505,7 @@
     els.suiteAddTestcaseSelect.innerHTML = '';
     if (state.testCases.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(chưa có test case nào ở Test Builder)';
+      opt.textContent = '(No Test Case in Test Builder)';
       opt.value = '';
       els.suiteAddTestcaseSelect.appendChild(opt);
     } else {

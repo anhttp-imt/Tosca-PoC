@@ -52,7 +52,7 @@
 
   function setScanning(on) {
     state.scanning = on;
-    els.btnScanToggle.textContent = on ? 'Dừng Scan' : 'Bắt đầu Scan';
+    els.btnScanToggle.textContent = on ? 'Stop Scan' : 'Start Scan';
     els.btnScanToggle.classList.toggle('btn-primary', !on);
     els.btnScanToggle.classList.toggle('btn-danger', on);
   }
