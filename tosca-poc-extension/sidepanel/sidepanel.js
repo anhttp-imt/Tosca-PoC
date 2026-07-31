@@ -24,6 +24,8 @@
           <span class="item-actions">
             <button data-action="rename" title="Rename">✎</button>
             <button data-action="delete" title="Delete">🗑</button>
+            <button data-action="rename" title="Rename">✎</button>
+            <button data-action="delete" title="Delete">🗑</button>
           </span>
         </div>
         <span class="item-sub"></span>
@@ -34,7 +36,7 @@
       subs[0].textContent = `selector: ${bestSelector}`;
       subs[1].textContent = obj.pageUrlPattern;
       li.querySelector('[data-action="rename"]').addEventListener('click', async () => {
-        const name = prompt('New object name:', obj.name);
+        const name = prompt('New Object Name:', obj.name);
         if (!name) return;
         obj.name = name;
         await send('SP_RENAME_OBJECT', { objectId: obj.id, name });

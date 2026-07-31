@@ -197,7 +197,7 @@
     els.targetTabSelect.innerHTML = '';
     if (tabs.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(no tabs)';
+      opt.textContent = '(No tab)';
       opt.value = '';
       els.targetTabSelect.appendChild(opt);
       return;
@@ -232,7 +232,7 @@
       sel.innerHTML = '';
       if (state.testCases.length === 0) {
         const opt = document.createElement('option');
-        opt.textContent = '(no test cases)';
+        opt.textContent = '(No Test Case)';
         opt.value = '';
         sel.appendChild(opt);
       } else {
@@ -260,7 +260,7 @@
     els.stepObjectSelect.innerHTML = '';
     if (state.objects.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(no objects - scan in the extension first)';
+      opt.textContent = '(No Object - Please scan in the extension first.)';
       opt.value = '';
       els.stepObjectSelect.appendChild(opt);
       return;
@@ -279,7 +279,7 @@
 
   function stepSummary(step) {
     const obj = getObject(step.objectId);
-    const objName = obj ? obj.name : step.action === 'wait' || step.action === 'sendkey' || step.action === 'openurl' ? '(no target)' : '(object deleted)';
+    const objName = obj ? obj.name : step.action === 'wait' || step.action === 'sendkey' ? '(no target)' : '(Object is deleted)';
     if (step.action === 'wait') return `Wait ${step.waitMs || step.value || 500}ms`;
     if (step.action === 'sendkey') return `Send Key "${step.value ?? ''}"`;
     if (step.action === 'openurl') {
@@ -440,7 +440,7 @@
     els.editStepObjectSelect.innerHTML = '';
     if (state.objects.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(no objects)';
+      opt.textContent = '(No Object)';
       opt.value = '';
       els.editStepObjectSelect.appendChild(opt);
     } else {
@@ -536,7 +536,7 @@
       sel.innerHTML = '';
       if (state.testSuites.length === 0) {
         const opt = document.createElement('option');
-        opt.textContent = '(no suites)';
+        opt.textContent = '(No Suite)';
         opt.value = '';
         sel.appendChild(opt);
       } else {
@@ -560,7 +560,7 @@
     els.suiteAddTestcaseSelect.innerHTML = '';
     if (state.testCases.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(no test cases in Test Builder)';
+      opt.textContent = '(No Test Case in Test Builder)';
       opt.value = '';
       els.suiteAddTestcaseSelect.appendChild(opt);
     } else {
@@ -583,14 +583,14 @@
       const tc = getTestCase(tcId);
       const li = document.createElement('li');
       li.className = 'item-card';
-      const label = tc ? `${tc.name} (${tc.steps.length} step)` : '(test case deleted)';
+      const label = tc ? `${tc.name} (${tc.steps.length} step)` : '(Tescase is deleted!)';
       li.innerHTML = `
         <div class="item-card-row">
           <span class="item-title">${idx + 1}. ${escapeHtml(label)}</span>
           <span class="item-actions">
             <button data-action="up" title="Up">↑</button>
             <button data-action="down" title="Down">↓</button>
-            <button data-action="delete" title="Remove from suite">🗑</button>
+            <button data-action="delete" title="Delete">🗑</button>
           </span>
         </div>
       `;
@@ -625,6 +625,25 @@
     suite.testCaseIds.splice(idx, 1);
     renderSuiteItems();
     persistActiveSuite();
+  }
+
+  function renderSuiteProgressList() {
+    els.suiteProgressList.innerHTML = '';
+    if (!state.suiteRun) return;
+    state.suiteRun.testCaseIds.forEach((tcId, idx) => {
+      const tc = getTestCase(tcId);
+      const status = state.suiteRun.statuses[tcId] || 'pending';
+      const li = document.createElement('li');
+      li.className = 'item-card';
+      li.dataset.suiteTestcaseId = tcId;
+      li.innerHTML = `
+        <div class="item-card-row">
+          <span class="item-title">${idx + 1}. ${escapeHtml(tc ? tc.name : '(Tescase is deleted!)')}</span>
+          <span class="status-chip status-${status}">${status}</span>
+        </div>
+      `;
+      els.suiteProgressList.appendChild(li);
+    });
   }
 
   // ---------------- Run ----------------
@@ -880,12 +899,12 @@
     });
 
     els.btnRefreshTabs.addEventListener('click', () => {
-      if (!connected) { alert('Please Connect first.'); return; }
+      if (!connected) { alert('Please connect the Web App'); return; }
       sendToExtension('WA_LIST_TABS');
     });
 
     els.btnNewTestcase.addEventListener('click', () => {
-      const name = prompt('New test case name:', `Test case ${state.testCases.length + 1}`);
+      const name = prompt('TC Name:', `Test case ${state.testCases.length + 1}`);
       if (!name) return;
       const tc = { id: uid('tc'), name, steps: [], createdAt: Date.now() };
       state.testCases.push(tc);
@@ -903,7 +922,7 @@
 
     els.btnDeleteTestcase.addEventListener('click', () => {
       const tc = getTestCase(state.activeTestCaseId);
-      if (!tc || !confirm(`Delete test case "${tc.name}"?`)) return;
+      if (!tc || !confirm(`Delete Test Case "${tc.name}"?`)) return;
       sendToExtension('WA_DELETE_TEST_CASE', { testCaseId: tc.id });
       state.testCases = state.testCases.filter((t) => t.id !== tc.id);
       state.activeTestCaseId = null;
@@ -912,9 +931,9 @@
     });
 
     els.btnRecordToggle.addEventListener('click', () => {
-      if (!connected) { alert('Please Connect to the extension first.'); return; }
+      if (!connected) { alert('Please connect to extension!'); return; }
       const tabId = getTargetTabId();
-      if (!tabId) { alert('Please select a Target Tab first.'); return; }
+      if (!tabId) { alert('Choose Target Tab'); return; }
       if (!state.activeTestCaseId) return;
       setRecording(!state.recording);
       sendToExtension(state.recording ? 'WA_START_RECORD' : 'WA_STOP_RECORD', { tabId });
@@ -922,7 +941,7 @@
 
     els.btnAddStep.addEventListener('click', () => {
       const tc = getTestCase(state.activeTestCaseId);
-      if (!tc) { alert('Please select or create a test case first.'); return; }
+      if (!tc) { alert('Please select or create new testcase!'); return; }
       const action = els.stepActionSelect.value;
       const objectId = els.stepObjectSelect.value || null;
       const rawValue = els.stepValueInput.value;
@@ -1000,16 +1019,16 @@
 
     els.btnSuiteAddTestcase.addEventListener('click', () => {
       const suite = getSuite(state.activeSuiteId);
-      if (!suite) { alert('Please select or create a suite first.'); return; }
+      if (!suite) { alert('Please select or create suite!'); return; }
       const tcId = els.suiteAddTestcaseSelect.value;
-      if (!tcId) { alert('Please create test cases in Test Builder first.'); return; }
+      if (!tcId) { alert('Please create testcase in Test Builder!'); return; }
       suite.testCaseIds.push(tcId);
       renderSuiteItems();
       persistActiveSuite();
     });
 
     els.btnRunTestcase.addEventListener('click', () => {
-      if (!connected) { alert('Please Connect to the extension first.'); return; }
+      if (!connected) { alert('Please connect to extension!'); return; }
       const tabId = getTargetTabId();
       if (!tabId) { alert('Please select a Target Tab first.'); return; }
 
@@ -1031,9 +1050,9 @@
 
     els.btnClearReports.addEventListener('click', () => {
       if (!confirm(
-        '🗑 Clear report history\n\n' +
-        'This action will delete all saved test results (PASS/FAIL reports).\n' +
-        'Objects, Test Cases, and Test Suites will NOT be affected.\n\n' +
+        '🗑 Delete report history\n\n' +
+        'This will delete all saved test results (PASS/FAIL).\n' +
+        'Objects, Test Cases, and Test Suites remain unaffected.\n\n' +
         'Are you sure you want to continue?'
       )) return;
       sendToExtension('WA_CLEAR_REPORTS');
@@ -1043,13 +1062,13 @@
 
     els.btnClearStorage.addEventListener('click', () => {
       if (!confirm(
-        '⚠️ Clear all storage\n\n' +
-        'This action will COMPLETELY DELETE all data:\n' +
+        '⚠️ Delete all storages\n\n' +
+        'This action will permanently delete all data:\n' +
         '  • Object Repository (all scanned selectors)\n' +
         '  • Test Cases (all created tests)\n' +
         '  • Test Suites (all configured suites)\n' +
         '  • Reports (all saved test results)\n\n' +
-        'This action CANNOT BE UNDONE.\n\n' +
+        'This action CANNOT be undone.\n\n' +
         'Are you sure you want to continue?'
       )) return;
       sendToExtension('WA_CLEAR_ALL_STORAGE');
