@@ -10,6 +10,7 @@
     recording: false,
     running: false,
     suiteRun: null, // { suiteRunId, testCaseIds, statuses: { [testCaseId]: 'pending'|'running'|'pass'|'fail' } }
+    variables: {}, // runtime variables: { varName: value, ... }
   };
 
   const els = {};
@@ -53,24 +54,24 @@
       port = null;
     }
     if (!window.chrome || !chrome.runtime || !chrome.runtime.connect) {
-      setConnectStatus(false, 'Trình duyệt không hỗ trợ chrome.runtime.connect');
+      setConnectStatus(false, 'Browser does not support chrome.runtime.connect');
       return;
     }
     try {
       port = chrome.runtime.connect(extId, { name: 'tosca-poc-webapp' });
     } catch (e) {
-      setConnectStatus(false, `Lỗi kết nối: ${e.message}`);
+      setConnectStatus(false, `Connection error: ${e.message}`);
       return;
     }
     port.onMessage.addListener(handlePortMessage);
     port.onDisconnect.addListener(() => {
       const err = chrome.runtime.lastError;
       connected = false;
-      setConnectStatus(false, err ? `Lỗi: ${err.message}` : 'Mất kết nối');
+      setConnectStatus(false, err ? `Error: ${err.message}` : 'Disconnected');
       port = null;
     });
     connected = true;
-    setConnectStatus(true, 'Đã kết nối');
+    setConnectStatus(true, 'Connected');
     localStorage.setItem('tosca_ext_id', extId);
     sendToExtension('WA_LIST_TABS');
     sendToExtension('WA_GET_ALL_DATA');
@@ -87,12 +88,18 @@
         state.testCases = message.testCases || [];
         state.testSuites = message.testSuites || [];
         state.reports = message.reports || [];
+        state.variables = message.variables || {};
+        renderVariables();
         renderStepObjectOptions();
         renderTestCaseSelectors();
         renderSteps();
         renderSuiteSelectors();
         renderSuiteItems();
         renderRunSteps();
+        // If suite mode is selected, render the preview
+        if (els.runModeSelect && els.runModeSelect.value === 'suite') {
+          renderSuitePreview();
+        }
         renderReports();
         break;
       case 'WA_EVT_OBJECT_ADDED':
@@ -103,7 +110,7 @@
       case 'WA_EVT_STEP_ADDED': {
         let tc = getTestCase(state.activeTestCaseId);
         if (!tc) {
-          tc = { id: uid('tc'), name: `Recorded ${new Date().toLocaleTimeString('vi-VN')}`, steps: [], createdAt: Date.now() };
+          tc = { id: uid('tc'), name: `Recorded ${new Date().toLocaleTimeString('en-US')}`, steps: [], createdAt: Date.now() };
           state.testCases.push(tc);
           state.activeTestCaseId = tc.id;
           renderTestCaseSelectors();
@@ -115,8 +122,17 @@
       }
       case 'WA_EVT_RUN_STARTED':
         state.running = true;
+        // Don't reset variables here - they're loaded from storage in background
+        renderVariables();
         setRunButtonsState(true);
-        renderRunSteps();
+        // Only render flat step list when NOT running a suite
+        if (!state.suiteRun) {
+          renderRunSteps();
+        }
+        break;
+      case 'WA_EVT_VARIABLE_SET':
+        state.variables[message.variableName] = message.value;
+        renderVariables();
         break;
       case 'WA_EVT_STEP_RUNNING':
         updateRunStepStatus(message.stepId, 'running', '');
@@ -132,28 +148,40 @@
         break;
       case 'WA_EVT_SUITE_STARTED': {
         state.running = true;
+        state.variables = {}; // Reset variables at suite start
+        renderVariables();
         setRunButtonsState(true);
         (message.testCaseIds || []).forEach((id) => { statuses[id] = 'pending'; });
         state.suiteRun = { suiteRunId: message.suiteRunId, testCaseIds: message.testCaseIds || [], statuses };
-        renderSuiteProgressList();
+        // Render ALL steps from ALL test cases in the suite
+        renderRunStepsForSuite(message.testCaseIds);
+        // Auto-expand all test cases so user can see status changes in the expanded list
+        expandedTestCaseIds.clear();
+        message.testCaseIds.forEach((tcId) => {
+          expandedTestCaseIds.add(tcId);
+        });
+        els.runStepList.querySelectorAll('.suite-testcase-header').forEach((h) => {
+          h.classList.add('expanded');
+        });
+        els.runStepList.querySelectorAll('.suite-testcase-steps').forEach((s) => {
+          s.classList.add('expanded');
+        });
         break;
       }
       case 'WA_EVT_SUITE_TESTCASE_STARTED': {
         if (state.suiteRun) state.suiteRun.statuses[message.testCaseId] = 'running';
-        renderSuiteProgressList();
-        renderRunSteps(message.testCaseId);
         break;
       }
       case 'WA_EVT_SUITE_TESTCASE_FINISHED': {
         if (state.suiteRun) state.suiteRun.statuses[message.testCaseId] = message.status;
-        renderSuiteProgressList();
+        updateSuiteTestCaseStatus(message.testCaseId, message.status);
         break;
       }
       case 'WA_EVT_SUITE_FINISHED':
         state.running = false;
         setRunButtonsState(false);
-        // Trạng thái từng test case đã được cập nhật qua WA_EVT_SUITE_TESTCASE_FINISHED;
-        // chi tiết report của từng test case xem ở tab Report (nhóm theo suite).
+        // Test case status already updated via WA_EVT_SUITE_TESTCASE_FINISHED;
+        // view individual test case reports in the Report tab (grouped by suite).
         break;
       case 'WA_EVT_DATA_CHANGED':
         // Extension báo data đã thay đổi (từ side panel hoặc web app khác) — tự động re-fetch
@@ -169,7 +197,7 @@
     els.targetTabSelect.innerHTML = '';
     if (tabs.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(không có tab nào)';
+      opt.textContent = '(no tabs)';
       opt.value = '';
       els.targetTabSelect.appendChild(opt);
       return;
@@ -204,7 +232,7 @@
       sel.innerHTML = '';
       if (state.testCases.length === 0) {
         const opt = document.createElement('option');
-        opt.textContent = '(chưa có test case)';
+        opt.textContent = '(no test cases)';
         opt.value = '';
         sel.appendChild(opt);
       } else {
@@ -232,7 +260,7 @@
     els.stepObjectSelect.innerHTML = '';
     if (state.objects.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(chưa có object - hãy Scan trong extension trước)';
+      opt.textContent = '(no objects - scan in the extension first)';
       opt.value = '';
       els.stepObjectSelect.appendChild(opt);
       return;
@@ -246,14 +274,20 @@
   }
 
   function actionLabel(action) {
-    return { click: 'Click', input: 'Input', select: 'Select', verify: 'Verify Text', wait: 'Wait', sendkey: 'Send Key' }[action] || action;
+    return { click: 'Click', input: 'Input', select: 'Select', extract: 'Extract', verify: 'Verify Text', wait: 'Wait', openurl: 'Open URL', sendkey: 'Send Key' }[action] || action;
   }
 
   function stepSummary(step) {
     const obj = getObject(step.objectId);
-    const objName = obj ? obj.name : step.action === 'wait' || step.action === 'sendkey' ? '(no target)' : '(object đã bị xóa)';
+    const objName = obj ? obj.name : step.action === 'wait' || step.action === 'sendkey' || step.action === 'openurl' ? '(no target)' : '(object deleted)';
     if (step.action === 'wait') return `Wait ${step.waitMs || step.value || 500}ms`;
     if (step.action === 'sendkey') return `Send Key "${step.value ?? ''}"`;
+    if (step.action === 'openurl') {
+      const url = step.value ?? '';
+      const truncated = url.length > 50 ? url.slice(0, 50) + '...' : url;
+      return `Open URL "${truncated}"`;
+    }
+    if (step.action === 'extract') return `Extract "${objName}" → $${step.variableName || 'value'}`;
     if (step.action === 'verify') return `Verify "${objName}" == "${step.expectedValue ?? step.value ?? ''}"`;
     if (step.action === 'input' || step.action === 'select') return `${actionLabel(step.action)} "${objName}" = "${step.value ?? ''}"`;
     return `${actionLabel(step.action)} "${objName}"`;
@@ -278,13 +312,13 @@
       li.dataset.stepIndex = idx;
       li.innerHTML = `
         <div class="item-card-row">
-          <span class="drag-handle" title="Kéo để thay đổi vị trí">☰</span>
+          <span class="drag-handle" title="Drag to reorder">☰</span>
           <span class="item-title">${idx + 1}. ${escapeHtml(stepSummary(step))}</span>
           <span class="item-actions">
-            <button data-action="up" title="Lên">↑</button>
-            <button data-action="down" title="Xuống">↓</button>
-            <button data-action="edit" title="Chỉnh sửa">✏️</button>
-            <button data-action="delete" title="Xóa">🗑</button>
+            <button data-action="up" title="Up">↑</button>
+            <button data-action="down" title="Down">↓</button>
+            <button data-action="edit" title="Edit">✏️</button>
+            <button data-action="delete" title="Delete">🗑</button>
           </span>
         </div>
       `;
@@ -406,7 +440,7 @@
     els.editStepObjectSelect.innerHTML = '';
     if (state.objects.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(chưa có object)';
+      opt.textContent = '(no objects)';
       opt.value = '';
       els.editStepObjectSelect.appendChild(opt);
     } else {
@@ -427,7 +461,15 @@
     if (step.action === 'input' || step.action === 'select') value = step.value ?? '';
     else if (step.action === 'verify') value = step.expectedValue ?? '';
     else if (step.action === 'wait') value = String(step.waitMs ?? 500);
+    else if (step.action === 'openurl') value = step.value ?? '';
+    else if (step.action === 'extract') value = step.variableName || '';
     els.editStepValueInput.value = value;
+
+    // Show/hide variable name row based on action
+    els.editVariableNameRow.style.display = step.action === 'extract' ? '' : 'none';
+    if (step.action === 'extract') {
+      els.editStepVariableNameInput.value = step.variableName || '';
+    }
 
     els.stepEditOverlay.classList.add('active');
   }
@@ -445,17 +487,21 @@
     const action = els.editStepActionSelect.value;
     const objectId = els.editStepObjectSelect.value || null;
     const rawValue = els.editStepValueInput.value;
+    const variableName = els.editStepVariableNameInput.value.trim();
 
     step.action = action;
     step.objectId = objectId;
     delete step.value;
     delete step.expectedValue;
     delete step.waitMs;
+    delete step.variableName;
 
     if (action === 'input' || action === 'select') step.value = rawValue;
     if (action === 'verify') step.expectedValue = rawValue;
     if (action === 'wait') step.waitMs = parseInt(rawValue, 10) || 500;
     if (action === 'sendkey') step.value = rawValue;
+    if (action === 'openurl') step.value = rawValue;
+    if (action === 'extract') step.variableName = variableName || 'extractedValue';
 
     closeStepEditModal();
     renderSteps();
@@ -464,12 +510,21 @@
 
   function setRecording(on) {
     state.recording = on;
-    els.btnRecordToggle.textContent = on ? 'Dừng Record' : 'Bắt đầu Record';
+    els.btnRecordToggle.textContent = on ? 'Stop Record' : 'Start Record';
     els.btnRecordToggle.classList.toggle('active', on);
   }
 
   function setRunButtonsState(isRunning) {
-    els.btnRunTestcase.disabled = isRunning;
+    if (isRunning) {
+      // When running, disable both run buttons
+      els.btnRunTestcase.disabled = true;
+      if (els.btnRunSuite) els.btnRunSuite.disabled = true;
+    } else {
+      // When not running, restore based on current mode
+      const isSuite = els.runModeSelect && els.runModeSelect.value === 'suite';
+      els.btnRunTestcase.disabled = isSuite;
+      if (els.btnRunSuite) els.btnRunSuite.disabled = !isSuite;
+    }
     els.btnCancelRun.disabled = !isRunning;
   }
 
@@ -481,7 +536,7 @@
       sel.innerHTML = '';
       if (state.testSuites.length === 0) {
         const opt = document.createElement('option');
-        opt.textContent = '(chưa có suite)';
+        opt.textContent = '(no suites)';
         opt.value = '';
         sel.appendChild(opt);
       } else {
@@ -505,7 +560,7 @@
     els.suiteAddTestcaseSelect.innerHTML = '';
     if (state.testCases.length === 0) {
       const opt = document.createElement('option');
-      opt.textContent = '(chưa có test case nào ở Test Builder)';
+      opt.textContent = '(no test cases in Test Builder)';
       opt.value = '';
       els.suiteAddTestcaseSelect.appendChild(opt);
     } else {
@@ -528,14 +583,14 @@
       const tc = getTestCase(tcId);
       const li = document.createElement('li');
       li.className = 'item-card';
-      const label = tc ? `${tc.name} (${tc.steps.length} step)` : '(test case đã bị xóa)';
+      const label = tc ? `${tc.name} (${tc.steps.length} step)` : '(test case deleted)';
       li.innerHTML = `
         <div class="item-card-row">
           <span class="item-title">${idx + 1}. ${escapeHtml(label)}</span>
           <span class="item-actions">
-            <button data-action="up" title="Lên">↑</button>
-            <button data-action="down" title="Xuống">↓</button>
-            <button data-action="delete" title="Xóa khỏi suite">🗑</button>
+            <button data-action="up" title="Up">↑</button>
+            <button data-action="down" title="Down">↓</button>
+            <button data-action="delete" title="Remove from suite">🗑</button>
           </span>
         </div>
       `;
@@ -572,25 +627,6 @@
     persistActiveSuite();
   }
 
-  function renderSuiteProgressList() {
-    els.suiteProgressList.innerHTML = '';
-    if (!state.suiteRun) return;
-    state.suiteRun.testCaseIds.forEach((tcId, idx) => {
-      const tc = getTestCase(tcId);
-      const status = state.suiteRun.statuses[tcId] || 'pending';
-      const li = document.createElement('li');
-      li.className = 'item-card';
-      li.dataset.suiteTestcaseId = tcId;
-      li.innerHTML = `
-        <div class="item-card-row">
-          <span class="item-title">${idx + 1}. ${escapeHtml(tc ? tc.name : '(test case đã bị xóa)')}</span>
-          <span class="status-chip status-${status}">${status}</span>
-        </div>
-      `;
-      els.suiteProgressList.appendChild(li);
-    });
-  }
-
   // ---------------- Run ----------------
 
   function renderRunSteps(explicitTcId) {
@@ -623,11 +659,139 @@
     li.querySelector('.run-msg').textContent = message || '';
   }
 
+  // Track expanded state per test case ID
+  const expandedTestCaseIds = new Set();
+
+  function renderSuitePreview() {
+    els.runStepList.innerHTML = '';
+    const suite = getSuite(els.runSuiteSelect.value);
+    if (!suite || suite.testCaseIds.length === 0) {
+      els.runEmpty.classList.add('visible');
+      return;
+    }
+    els.runEmpty.classList.remove('visible');
+
+    suite.testCaseIds.forEach((tcId, tcIdx) => {
+      const tc = getTestCase(tcId);
+      if (!tc) return;
+
+      // Create section wrapper
+      const section = document.createElement('div');
+      section.className = 'suite-testcase-section';
+      section.dataset.testCaseId = tcId;
+
+      // Header (clickable)
+      const header = document.createElement('div');
+      header.className = 'suite-testcase-header';
+      header.innerHTML = `
+        <span class="item-title">
+          <span class="expand-icon">▶</span>
+          Test Case ${tcIdx + 1}: ${escapeHtml(tc.name)} <span style="color:var(--muted); font-weight:400; font-size:12px;">(${tc.steps.length} steps)</span>
+        </span>
+        <span class="status-chip status-pending" data-suite-tc="${CSS.escape(tcId)}">pending</span>
+      `;
+      header.addEventListener('click', () => {
+        const isExpanded = expandedTestCaseIds.has(tcId);
+        if (isExpanded) {
+          expandedTestCaseIds.delete(tcId);
+          header.classList.remove('expanded');
+          stepsContainer.classList.remove('expanded');
+        } else {
+          expandedTestCaseIds.add(tcId);
+          header.classList.add('expanded');
+          stepsContainer.classList.add('expanded');
+        }
+      });
+
+      // Steps container (collapsible)
+      const stepsContainer = document.createElement('div');
+      stepsContainer.className = 'suite-testcase-steps';
+
+      tc.steps.forEach((step, stepIdx) => {
+        const li = document.createElement('div');
+        li.className = 'suite-step item-card';
+        li.dataset.stepId = step.id;
+        li.dataset.testCaseId = tcId;
+        li.innerHTML = `
+          <div class="item-card-row">
+            <span class="item-title">${tcIdx + 1}.${stepIdx + 1}. ${escapeHtml(stepSummary(step))}</span>
+            <span class="status-chip status-pending">pending</span>
+          </div>
+          <span class="item-sub run-msg"></span>
+        `;
+        stepsContainer.appendChild(li);
+      });
+
+      section.appendChild(header);
+      section.appendChild(stepsContainer);
+      els.runStepList.appendChild(section);
+    });
+  }
+
+  function renderRunStepsForSuite(testCaseIds) {
+    // Reset all status chips on existing list (don't rebuild DOM)
+    els.runStepList.querySelectorAll('.status-chip').forEach((chip) => {
+      chip.className = 'status-chip status-pending';
+      chip.textContent = 'pending';
+    });
+    els.runStepList.querySelectorAll('.run-msg').forEach((msg) => {
+      msg.textContent = '';
+    });
+    // Clear expanded state
+    expandedTestCaseIds.clear();
+    els.runStepList.querySelectorAll('.suite-testcase-header').forEach((h) => {
+      h.classList.remove('expanded');
+    });
+    els.runStepList.querySelectorAll('.suite-testcase-steps').forEach((s) => {
+      s.classList.remove('expanded');
+    });
+  }
+
+  function updateSuiteTestCaseStatus(tcId, status) {
+    const chip = els.runStepList.querySelector(`[data-suite-tc="${CSS.escape(tcId)}"]`);
+    if (!chip) return;
+    chip.className = `status-chip status-${status}`;
+    chip.textContent = status;
+
+    // Auto-expand when test case starts running
+    if (status === 'running') {
+      const section = chip.closest('.suite-testcase-section');
+      if (section) {
+        const header = section.querySelector('.suite-testcase-header');
+        const stepsContainer = section.querySelector('.suite-testcase-steps');
+        expandedTestCaseIds.add(tcId);
+        header.classList.add('expanded');
+        stepsContainer.classList.add('expanded');
+      }
+    }
+  }
+
+  // ---------------- Variables ----------------
+
+  function renderVariables() {
+    const keys = Object.keys(state.variables);
+    if (keys.length === 0) {
+      els.variablesPanel.style.display = 'none';
+      return;
+    }
+    els.variablesPanel.style.display = '';
+    els.variablesList.innerHTML = '';
+    keys.forEach((key) => {
+      const div = document.createElement('div');
+      div.className = 'variable-item';
+      div.innerHTML = `
+        <span class="variable-name">${escapeHtml(key)}</span>
+        <span class="variable-value">${escapeHtml(state.variables[key])}</span>
+      `;
+      els.variablesList.appendChild(div);
+    });
+  }
+
   // ---------------- Report ----------------
 
   function fmtTime(ts) {
     if (!ts) return '-';
-    return new Date(ts).toLocaleString('vi-VN');
+    return new Date(ts).toLocaleString('en-US');
   }
 
   function buildReportCard(report) {
@@ -711,17 +875,17 @@
   function wireEvents() {
     els.btnConnect.addEventListener('click', () => {
       const extId = els.extIdInput.value.trim();
-      if (!extId) { alert('Hãy dán Extension ID trước.'); return; }
+      if (!extId) { alert('Please paste the Extension ID first.'); return; }
       connectToExtension(extId);
     });
 
     els.btnRefreshTabs.addEventListener('click', () => {
-      if (!connected) { alert('Hãy Connect trước.'); return; }
+      if (!connected) { alert('Please Connect first.'); return; }
       sendToExtension('WA_LIST_TABS');
     });
 
     els.btnNewTestcase.addEventListener('click', () => {
-      const name = prompt('Tên test case mới:', `Test case ${state.testCases.length + 1}`);
+      const name = prompt('New test case name:', `Test case ${state.testCases.length + 1}`);
       if (!name) return;
       const tc = { id: uid('tc'), name, steps: [], createdAt: Date.now() };
       state.testCases.push(tc);
@@ -739,7 +903,7 @@
 
     els.btnDeleteTestcase.addEventListener('click', () => {
       const tc = getTestCase(state.activeTestCaseId);
-      if (!tc || !confirm(`Xóa test case "${tc.name}"?`)) return;
+      if (!tc || !confirm(`Delete test case "${tc.name}"?`)) return;
       sendToExtension('WA_DELETE_TEST_CASE', { testCaseId: tc.id });
       state.testCases = state.testCases.filter((t) => t.id !== tc.id);
       state.activeTestCaseId = null;
@@ -748,9 +912,9 @@
     });
 
     els.btnRecordToggle.addEventListener('click', () => {
-      if (!connected) { alert('Hãy Connect tới extension trước.'); return; }
+      if (!connected) { alert('Please Connect to the extension first.'); return; }
       const tabId = getTargetTabId();
-      if (!tabId) { alert('Hãy chọn Target Tab trước.'); return; }
+      if (!tabId) { alert('Please select a Target Tab first.'); return; }
       if (!state.activeTestCaseId) return;
       setRecording(!state.recording);
       sendToExtension(state.recording ? 'WA_START_RECORD' : 'WA_STOP_RECORD', { tabId });
@@ -758,22 +922,32 @@
 
     els.btnAddStep.addEventListener('click', () => {
       const tc = getTestCase(state.activeTestCaseId);
-      if (!tc) { alert('Hãy chọn hoặc tạo test case trước.'); return; }
+      if (!tc) { alert('Please select or create a test case first.'); return; }
       const action = els.stepActionSelect.value;
       const objectId = els.stepObjectSelect.value || null;
       const rawValue = els.stepValueInput.value;
-      if (action !== 'wait' && action !== 'sendkey' && !objectId) { alert('Hãy scan object trong extension trước khi thêm step.'); return; }
+      const variableName = els.stepVariableNameInput.value.trim();
+      if (action !== 'wait' && action !== 'sendkey' && action !== 'openurl' && !objectId) { alert('Please scan objects in the extension before adding steps.'); return; }
 
       const step = { id: uid('step'), action, objectId };
       if (action === 'input' || action === 'select') step.value = rawValue;
       if (action === 'verify') step.expectedValue = rawValue;
       if (action === 'wait') step.waitMs = parseInt(rawValue, 10) || 500;
       if (action === 'sendkey') step.value = rawValue;
+      if (action === 'openurl') step.value = rawValue;
+      if (action === 'extract') step.variableName = variableName || 'extractedValue';
 
       tc.steps.push(step);
       els.stepValueInput.value = '';
+      els.stepVariableNameInput.value = '';
       renderSteps();
       persistActiveTestCase();
+    });
+
+    // Show/hide variable name input based on action selected
+    els.stepActionSelect.addEventListener('change', () => {
+      const isExtract = els.stepActionSelect.value === 'extract';
+      els.stepVariableNameInput.style.display = isExtract ? '' : 'none';
     });
 
     els.runTestcaseSelect.addEventListener('change', () => renderRunSteps());
@@ -782,10 +956,23 @@
       const isSuite = els.runModeSelect.value === 'suite';
       els.runModeTestcaseDiv.style.display = isSuite ? 'none' : '';
       els.runModeSuiteDiv.style.display = isSuite ? '' : 'none';
+
+      // Toggle run buttons based on mode
+      if (isSuite) {
+        els.btnRunTestcase.disabled = true;
+        els.btnRunSuite.disabled = false;
+        renderSuitePreview();
+      } else {
+        els.btnRunTestcase.disabled = false;
+        els.btnRunSuite.disabled = true;
+        renderRunSteps();
+      }
     });
 
+    els.runSuiteSelect.addEventListener('change', () => renderSuitePreview());
+
     els.btnNewSuite.addEventListener('click', () => {
-      const name = prompt('Tên suite mới:', `Suite ${state.testSuites.length + 1}`);
+      const name = prompt('New suite name:', `Suite ${state.testSuites.length + 1}`);
       if (!name) return;
       const suite = { id: uid('suite'), name, testCaseIds: [], createdAt: Date.now() };
       state.testSuites.push(suite);
@@ -803,7 +990,7 @@
 
     els.btnDeleteSuite.addEventListener('click', () => {
       const suite = getSuite(state.activeSuiteId);
-      if (!suite || !confirm(`Xóa suite "${suite.name}"?`)) return;
+      if (!suite || !confirm(`Delete suite "${suite.name}"?`)) return;
       sendToExtension('WA_DELETE_TEST_SUITE', { suiteId: suite.id });
       state.testSuites = state.testSuites.filter((s) => s.id !== suite.id);
       state.activeSuiteId = null;
@@ -813,42 +1000,41 @@
 
     els.btnSuiteAddTestcase.addEventListener('click', () => {
       const suite = getSuite(state.activeSuiteId);
-      if (!suite) { alert('Hãy chọn hoặc tạo suite trước.'); return; }
+      if (!suite) { alert('Please select or create a suite first.'); return; }
       const tcId = els.suiteAddTestcaseSelect.value;
-      if (!tcId) { alert('Hãy tạo test case ở Test Builder trước.'); return; }
+      if (!tcId) { alert('Please create test cases in Test Builder first.'); return; }
       suite.testCaseIds.push(tcId);
       renderSuiteItems();
       persistActiveSuite();
     });
 
     els.btnRunTestcase.addEventListener('click', () => {
-      if (!connected) { alert('Hãy Connect tới extension trước.'); return; }
+      if (!connected) { alert('Please Connect to the extension first.'); return; }
       const tabId = getTargetTabId();
-      if (!tabId) { alert('Hãy chọn Target Tab trước.'); return; }
+      if (!tabId) { alert('Please select a Target Tab first.'); return; }
 
       if (els.runModeSelect.value === 'suite') {
         const suite = getSuite(els.runSuiteSelect.value);
-        if (!suite || suite.testCaseIds.length === 0) { alert('Suite rỗng hoặc chưa chọn.'); return; }
-        els.suiteProgressList.innerHTML = '';
-        els.runStepList.innerHTML = '';
+        if (!suite || suite.testCaseIds.length === 0) { alert('Suite is empty or not selected.'); return; }
+        // Don't clear runStepList — the suite preview is already rendered.
+        // WA_EVT_SUITE_STARTED will call renderRunStepsForSuite() to reset statuses.
         sendToExtension('WA_RUN_TEST_SUITE', { tabId, suite });
         return;
       }
 
       const tc = getTestCase(els.runTestcaseSelect.value);
-      if (!tc || tc.steps.length === 0) { alert('Test case rỗng hoặc chưa chọn.'); return; }
+      if (!tc || tc.steps.length === 0) { alert('Test case is empty or not selected.'); return; }
       state.suiteRun = null;
-      els.suiteProgressList.innerHTML = '';
       renderRunSteps();
       sendToExtension('WA_RUN_TEST_CASE', { tabId, testCase: tc });
     });
 
     els.btnClearReports.addEventListener('click', () => {
       if (!confirm(
-        '🗑 Xóa lịch sử report\n\n' +
-        'Hành động này sẽ xóa toàn bộ kết quả test đã lưu (báo cáo PASS/FAIL).\n' +
-        'Các Object, Test Case và Test Suite sẽ KHÔNG bị ảnh hưởng.\n\n' +
-        'Bạn có chắc chắn muốn tiếp tục?'
+        '🗑 Clear report history\n\n' +
+        'This action will delete all saved test results (PASS/FAIL reports).\n' +
+        'Objects, Test Cases, and Test Suites will NOT be affected.\n\n' +
+        'Are you sure you want to continue?'
       )) return;
       sendToExtension('WA_CLEAR_REPORTS');
       state.reports = [];
@@ -857,14 +1043,14 @@
 
     els.btnClearStorage.addEventListener('click', () => {
       if (!confirm(
-        '⚠️ Xóa toàn bộ storage\n\n' +
-        'Hành động này sẽ XÓA HOÀN TOÀN tất cả dữ liệu:\n' +
-        '  • Object Repository (tất cả selectors đã scan)\n' +
-        '  • Test Cases (tất cả các test đã tạo)\n' +
-        '  • Test Suites (tất cả các suite đã cấu hình)\n' +
-        '  • Reports (tất cả kết quả test đã lưu)\n\n' +
-        'Hành động này KHÔNG THỂ HOÀN TÁC.\n\n' +
-        'Bạn có chắc chắn muốn tiếp tục?'
+        '⚠️ Clear all storage\n\n' +
+        'This action will COMPLETELY DELETE all data:\n' +
+        '  • Object Repository (all scanned selectors)\n' +
+        '  • Test Cases (all created tests)\n' +
+        '  • Test Suites (all configured suites)\n' +
+        '  • Reports (all saved test results)\n\n' +
+        'This action CANNOT BE UNDONE.\n\n' +
+        'Are you sure you want to continue?'
       )) return;
       sendToExtension('WA_CLEAR_ALL_STORAGE');
       state.objects = {};
@@ -882,12 +1068,48 @@
       sendToExtension('WA_CANCEL_RUN', {});
     });
 
+    // Run Suite from Run tab (runs the suite shown in the preview list)
+    els.btnRunSuite.addEventListener('click', () => {
+      if (!connected) { alert('Please Connect to the extension first.'); return; }
+      const tabId = getTargetTabId();
+      if (!tabId) { alert('Please select a Target Tab first.'); return; }
+      const suite = getSuite(els.runSuiteSelect.value);
+      if (!suite || suite.testCaseIds.length === 0) { alert('Suite is empty or not selected.'); return; }
+
+      // Set suiteRun BEFORE sending so WA_EVT_RUN_STARTED won't render flat list
+      const statuses = {};
+      suite.testCaseIds.forEach((id) => { statuses[id] = 'pending'; });
+      state.suiteRun = { suiteRunId: uid('sr'), testCaseIds: suite.testCaseIds, statuses };
+
+      // Render suite preview (grouped by test case) with all expanded
+      renderSuitePreview();
+      renderRunStepsForSuite(suite.testCaseIds);
+      expandedTestCaseIds.clear();
+      suite.testCaseIds.forEach((tcId) => {
+        expandedTestCaseIds.add(tcId);
+      });
+      els.runStepList.querySelectorAll('.suite-testcase-header').forEach((h) => {
+        h.classList.add('expanded');
+      });
+      els.runStepList.querySelectorAll('.suite-testcase-steps').forEach((s) => {
+        s.classList.add('expanded');
+      });
+
+      sendToExtension('WA_RUN_TEST_SUITE', { tabId, suite });
+    });
+
     // Step edit modal events
     els.btnModalClose.addEventListener('click', closeStepEditModal);
     els.btnModalCancel.addEventListener('click', closeStepEditModal);
     els.btnModalSave.addEventListener('click', saveStepEdit);
     els.stepEditOverlay.addEventListener('click', (e) => {
       if (e.target === els.stepEditOverlay) closeStepEditModal();
+    });
+
+    // Show/hide variable name row when action changes in modal
+    els.editStepActionSelect.addEventListener('change', () => {
+      const isExtract = els.editStepActionSelect.value === 'extract';
+      els.editVariableNameRow.style.display = isExtract ? '' : 'none';
     });
   }
 
@@ -910,11 +1132,14 @@
       stepObjectSelect: $('step-object-select'),
       stepActionSelect: $('step-action-select'),
       stepValueInput: $('step-value-input'),
+      stepVariableNameInput: $('step-variable-name-input'),
       btnAddStep: $('btn-add-step'),
       stepEditOverlay: $('step-edit-overlay'),
       editStepObjectSelect: $('edit-step-object-select'),
       editStepActionSelect: $('edit-step-action-select'),
       editStepValueInput: $('edit-step-value-input'),
+      editStepVariableNameInput: $('edit-step-variable-name-input'),
+      editVariableNameRow: $('edit-variable-name-row'),
       btnModalClose: $('btn-modal-close'),
       btnModalCancel: $('btn-modal-cancel'),
       btnModalSave: $('btn-modal-save'),
@@ -929,10 +1154,12 @@
       runModeTestcaseDiv: $('run-mode-testcase'),
       runModeSuiteDiv: $('run-mode-suite'),
       runSuiteSelect: $('run-suite-select'),
-      suiteProgressList: $('suite-progress-list'),
       runStepList: $('run-step-list'),
       runEmpty: $('run-empty'),
+      variablesPanel: $('variables-panel'),
+      variablesList: $('variables-list'),
       btnRunTestcase: $('btn-run-testcase'),
+      btnRunSuite: $('btn-run-suite'),
       btnCancelRun: $('btn-cancel-run'),
       reportList: $('report-list'),
       reportEmpty: $('report-empty'),
@@ -942,7 +1169,8 @@
 
     initTabs();
     wireEvents();
-
+    // Set initial button states: default mode is "testcase", so Run Suite is disabled
+    els.btnRunSuite.disabled = true;
     const savedId = localStorage.getItem('tosca_ext_id');
     if (savedId) {
       els.extIdInput.value = savedId;

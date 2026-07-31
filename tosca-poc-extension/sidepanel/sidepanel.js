@@ -22,8 +22,8 @@
         <div class="item-card-row">
           <span class="item-title"></span>
           <span class="item-actions">
-            <button data-action="rename" title="Đổi tên">✎</button>
-            <button data-action="delete" title="Xóa">🗑</button>
+            <button data-action="rename" title="Rename">✎</button>
+            <button data-action="delete" title="Delete">🗑</button>
           </span>
         </div>
         <span class="item-sub"></span>
@@ -34,14 +34,14 @@
       subs[0].textContent = `selector: ${bestSelector}`;
       subs[1].textContent = obj.pageUrlPattern;
       li.querySelector('[data-action="rename"]').addEventListener('click', async () => {
-        const name = prompt('Tên object mới:', obj.name);
+        const name = prompt('New object name:', obj.name);
         if (!name) return;
         obj.name = name;
         await send('SP_RENAME_OBJECT', { objectId: obj.id, name });
         renderObjects();
       });
       li.querySelector('[data-action="delete"]').addEventListener('click', async () => {
-        if (!confirm(`Xóa object "${obj.name}"?`)) return;
+        if (!confirm(`Delete object "${obj.name}"?`)) return;
         await send('SP_DELETE_OBJECT', { objectId: obj.id });
         state.objects = state.objects.filter((o) => o.id !== obj.id);
         renderObjects();
@@ -52,7 +52,7 @@
 
   function setScanning(on) {
     state.scanning = on;
-    els.btnScanToggle.textContent = on ? 'Dừng Scan' : 'Bắt đầu Scan';
+    els.btnScanToggle.textContent = on ? 'Stop Scan' : 'Start Scan';
     els.btnScanToggle.classList.toggle('btn-primary', !on);
     els.btnScanToggle.classList.toggle('btn-danger', on);
   }

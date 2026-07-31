@@ -273,14 +273,46 @@
         case 'wait':
           await sleep(step.waitMs || 500);
           break;
+        case 'extract': {
+          // Extract text/value from element and return it for variable storage
+          let extractedText = '';
+          try {
+            // Try multiple strategies to get text content safely
+            if (el.value !== undefined && el.value !== '') {
+              extractedText = String(el.value).trim();
+            } else if (el.textContent) {
+              extractedText = el.textContent.trim();
+            } else if (el.innerText) {
+              extractedText = el.innerText.trim();
+            } else {
+              // Fallback: get child text nodes only (avoids triggering SAP UI5 getters)
+              const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+              const texts = [];
+              let node;
+              while ((node = walker.nextNode())) {
+                texts.push(node.textContent);
+              }
+              extractedText = texts.join('').trim();
+            }
+          } catch (e) {
+            // Last resort: use outerText or nodeValue
+            try {
+              extractedText = String(el.textContent || el.firstChild?.nodeValue || '').trim();
+            } catch (e2) {
+              extractedText = '';
+            }
+          }
+          runOverlayEl.style.display = 'none';
+          return { status: 'pass', message: `Extracted: "${extractedText}"`, extractedValue: extractedText };
+        }
         case 'sendkey': {
           const keyStr = step.value ?? '';
           const keys = parseKeySequence(keyStr);
           for (const key of keys) {
             // Handle special keys that need direct actions (browser blocks default behavior for programmatic events)
             if (key === 'F5') {
-              location.reload();
-              await sleep(200);
+              // F5 reload is handled by background script - don't reload here
+              // This branch should not be reached if background handles F5 properly
               continue;
             }
             if (key === 'Tab') {
@@ -343,6 +375,9 @@
         return true; // keep the message channel open for the async response
       case 'BG_CHECK_ELEMENT':
         sendResponse({ found: !!ToscaSelectorUtils.findElement(message.selectors || {}) });
+        return;
+      case 'BG_CHECK_PAGE_READY':
+        sendResponse({ ready: document.readyState === 'complete' });
         return;
       default:
         return;

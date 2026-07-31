@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <title>Tosca PoC — Web App</title>
-<link rel="stylesheet" href="app.css" />
+<link rel="stylesheet" href="app.css?v=2026073105" />
 </head>
 <body>
   <header class="app-header">
@@ -12,9 +12,9 @@
   </header>
 
   <section class="connect-bar">
-    <input id="ext-id-input" type="text" placeholder="Dán Extension ID từ Side Panel..." />
+    <input id="ext-id-input" type="text" placeholder="Paste Extension ID from Side Panel..." />
     <button id="btn-connect" class="btn btn-primary">Connect</button>
-    <span id="connect-status" class="status-chip status-fail">Chưa kết nối</span>
+    <span id="connect-status" class="status-chip status-fail">Not connected</span>
   </section>
 
   <section class="target-bar">
@@ -34,15 +34,15 @@
     <section id="tab-builder" class="tab-panel active">
       <div class="toolbar">
         <select id="testcase-select"></select>
-        <button id="btn-new-testcase" class="btn">+ Test case mới</button>
+        <button id="btn-new-testcase" class="btn">+ New Test Case</button>
       </div>
       <div class="toolbar">
-        <button id="btn-record-toggle" class="btn btn-danger" disabled>Bắt đầu Record</button>
-        <button id="btn-delete-testcase" class="btn btn-ghost" disabled>Xóa test case</button>
+        <button id="btn-record-toggle" class="btn btn-danger" disabled>Start Record</button>
+        <button id="btn-delete-testcase" class="btn btn-ghost" disabled>Delete Test Case</button>
       </div>
-      <p class="hint">Record: mọi click/nhập liệu trên Target Tab sẽ tự thêm thành step. Hoặc thêm step thủ công bên dưới. Object lấy từ Object Repository đã scan trong extension.</p>
+      <p class="hint">Record: all clicks/inputs on the Target Tab will automatically be added as steps. Or add steps manually below. Objects are taken from the Object Repository scanned in the extension.</p>
       <ol id="step-list" class="item-list"></ol>
-      <p id="step-empty" class="empty-hint">Chưa có step nào.</p>
+      <p id="step-empty" class="empty-hint">No steps yet.</p>
 
       <div class="add-step-form">
         <select id="step-object-select"></select>
@@ -50,36 +50,39 @@
           <option value="click">Click</option>
           <option value="input">Input</option>
           <option value="select">Select</option>
+          <option value="extract">Extract</option>
           <option value="verify">Verify Text</option>
           <option value="wait">Wait</option>
+          <option value="openurl">Open URL</option>
           <option value="sendkey">Send Key</option>
         </select>
-        <input id="step-value-input" type="text" placeholder="Giá trị / expected text / ms" />
-        <button id="btn-add-step" class="btn">+ Thêm step</button>
+        <input id="step-value-input" type="text" placeholder="Value / expected text / ms" />
+        <input id="step-variable-name-input" type="text" placeholder="Variable name (for Extract)" style="display:none;" />
+        <button id="btn-add-step" class="btn">+ Add Step</button>
       </div>
     </section>
 
     <section id="tab-suite" class="tab-panel">
       <div class="toolbar">
         <select id="suite-select"></select>
-        <button id="btn-new-suite" class="btn">+ Suite mới</button>
-        <button id="btn-delete-suite" class="btn btn-ghost" disabled>Xóa suite</button>
+        <button id="btn-new-suite" class="btn">+ New Suite</button>
+        <button id="btn-delete-suite" class="btn btn-ghost" disabled>Delete Suite</button>
       </div>
-      <p class="hint">Nối nhiều test case (từ nhiều feature khác nhau) thành 1 workflow chạy tuần tự. Nếu 1 test case fail, suite dừng ngay, không chạy tiếp các test case sau.</p>
+      <p class="hint">Combine multiple test cases (from different features) into a single sequential workflow. If a test case fails, the suite stops immediately and does not run the remaining test cases.</p>
       <ol id="suite-item-list" class="item-list"></ol>
-      <p id="suite-empty" class="empty-hint">Suite chưa có test case nào.</p>
+      <p id="suite-empty" class="empty-hint">Suite has no test cases yet.</p>
 
       <div class="add-step-form">
         <select id="suite-add-testcase-select"></select>
-        <button id="btn-suite-add-testcase" class="btn">+ Thêm vào Suite</button>
+        <button id="btn-suite-add-testcase" class="btn">+ Add to Suite</button>
       </div>
     </section>
 
     <section id="tab-run" class="tab-panel">
       <div class="toolbar">
         <select id="run-mode-select">
-          <option value="testcase">Chạy: Test Case đơn lẻ</option>
-          <option value="suite">Chạy: Suite</option>
+          <option value="testcase">Run: Single Test Case</option>
+          <option value="suite">Run: Suite</option>
         </select>
       </div>
       <div class="toolbar" id="run-mode-testcase">
@@ -90,21 +93,27 @@
       </div>
       <div class="toolbar">
         <button id="btn-run-testcase" class="btn btn-primary">▶ Run</button>
+        <button id="btn-run-suite" class="btn btn-primary">▶ Run Suite</button>
         <button id="btn-cancel-run" class="btn btn-danger" disabled>⏹ Cancel</button>
       </div>
 
-      <ol id="suite-progress-list" class="item-list"></ol>
-      <ol id="run-step-list" class="item-list"></ol>
-      <p id="run-empty" class="empty-hint">Chọn một test case hoặc suite rồi bấm Run.</p>
+      <!-- Variables display panel -->
+      <div id="variables-panel" class="variables-panel" style="display:none;">
+        <h3>Variables</h3>
+        <div id="variables-list" class="variables-list"></div>
+      </div>
+
+      <div id="run-step-list" class="item-list"></div>
+      <p id="run-empty" class="empty-hint">Select a test case or suite then click Run.</p>
     </section>
 
     <section id="tab-report" class="tab-panel">
       <div class="toolbar">
-        <button id="btn-clear-reports" class="btn btn-ghost">Xóa lịch sử</button>
-        <button id="btn-clear-storage" class="btn btn-ghost btn-danger">🗑 Xóa toàn bộ storage</button>
+        <button id="btn-clear-reports" class="btn btn-ghost">Clear History</button>
+        <button id="btn-clear-storage" class="btn btn-ghost btn-danger">🗑 Clear All Storage</button>
       </div>
       <div id="report-list"></div>
-      <p id="report-empty" class="empty-hint">Chưa có lần chạy nào.</p>
+      <p id="report-empty" class="empty-hint">No runs yet.</p>
     </section>
   </main>
 
@@ -112,8 +121,8 @@
   <div id="step-edit-overlay" class="modal-overlay">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3>Chỉnh sửa Step</h3>
-        <button id="btn-modal-close" class="btn-ghost" title="Đóng">✕</button>
+        <h3>Edit Step</h3>
+        <button id="btn-modal-close" class="btn-ghost" title="Close">✕</button>
       </div>
       <div class="modal-body">
         <div class="form-row">
@@ -126,23 +135,29 @@
             <option value="click">Click</option>
             <option value="input">Input</option>
             <option value="select">Select</option>
+            <option value="extract">Extract</option>
             <option value="verify">Verify Text</option>
             <option value="wait">Wait</option>
+            <option value="openurl">Open URL</option>
             <option value="sendkey">Send Key</option>
           </select>
         </div>
         <div class="form-row">
-          <label>Giá trị / expected text / ms</label>
-          <input id="edit-step-value-input" type="text" placeholder="Giá trị" />
+          <label>Value / expected text / ms</label>
+          <input id="edit-step-value-input" type="text" placeholder="Value" />
+        </div>
+        <div class="form-row" id="edit-variable-name-row" style="display:none;">
+          <label>Variable name</label>
+          <input id="edit-step-variable-name-input" type="text" placeholder="e.g.: prNumber, poNumber" />
         </div>
       </div>
       <div class="modal-footer">
-        <button id="btn-modal-cancel" class="btn">Hủy</button>
-        <button id="btn-modal-save" class="btn btn-primary">Lưu</button>
+        <button id="btn-modal-cancel" class="btn">Cancel</button>
+        <button id="btn-modal-save" class="btn btn-primary">Save</button>
       </div>
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2026073105"></script>
 </body>
 </html>

@@ -10,11 +10,13 @@ const STORAGE_KEYS = {
   TEST_CASES: 'tosca_test_cases',
   TEST_SUITES: 'tosca_test_suites',
   REPORTS: 'tosca_reports',
+  VARIABLES: 'tosca_variables',
 };
 
 const ALLOWED_WEBAPP_ORIGIN = 'http://localhost:8787';
 const externalPorts = new Set();
 let cancelRun = false; // flag to cancel running test case / suite
+let runVariables = {}; // runtime variables for extract/reuse during test execution
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -56,7 +58,7 @@ async function ensureContentScriptInjected(tabId) {
     });
     return true;
   } catch (e) {
-    console.error('Tosca PoC: khong the inject content script', e);
+    console.error('Tosca PoC: cannot inject content script', e);
     return false;
   }
 }
@@ -115,13 +117,29 @@ function waitForElement(tabId, selectors, timeoutMs = 10000, intervalMs = 300) {
   });
 }
 
-// suiteMeta (khi test case này được chạy như 1 phần của Suite): { suiteRunId, suiteName, index, count }
-// Trả về report.overallStatus ('pass' | 'fail') để runTestSuite quyết định có chạy tiếp hay không.
+// Resolve ${variableName} placeholders in step values
+function resolveVariables(step) {
+  const resolved = { ...step };
+  if (resolved.value && typeof resolved.value === 'string') {
+    resolved.value = resolved.value.replace(/\$\{([^}]+)\}/g, (match, varName) => {
+      return runVariables[varName] !== undefined ? runVariables[varName] : match;
+    });
+  }
+  if (resolved.expectedValue && typeof resolved.expectedValue === 'string') {
+    resolved.expectedValue = resolved.expectedValue.replace(/\$\{([^}]+)\}/g, (match, varName) => {
+      return runVariables[varName] !== undefined ? runVariables[varName] : match;
+    });
+  }
+  return resolved;
+}
+
+// suiteMeta (when this test case is run as part of a Suite): { suiteRunId, suiteName, index, count }
+// Returns report.overallStatus ('pass' | 'fail') so runTestSuite can decide whether to continue.
 async function runTestCase(tabId, testCase, suiteMeta = null) {
   if (!tabId) return 'fail';
-  // Target Tab phải là tab đang hiển thị: content script overlay chỉ thấy được, và
-  // chrome.tabs.captureVisibleTab chỉ chụp đúng tab khi tab đó đang active/focused.
-  await focusTab(tabId);
+  // Don't focus target tab so web app can still show realtime status.
+  // Content script still works on non-visible tabs.
+  // Screenshots may fail on non-visible tabs but are handled with try/catch.
   const ok = await ensureContentScriptInjected(tabId);
   if (!ok) {
     const failReport = {
@@ -132,7 +150,7 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
       finishedAt: Date.now(),
       overallStatus: 'fail',
       steps: [],
-      error: 'Khong the chay tren tab da chon (trang bi han che quyen).',
+      error: 'Cannot run on selected tab (page has permission restrictions).',
       ...(suiteMeta ? { suiteRunId: suiteMeta.suiteRunId, suiteName: suiteMeta.suiteName, suiteIndex: suiteMeta.index, suiteCount: suiteMeta.count } : {}),
     };
     const reports = await getAll(STORAGE_KEYS.REPORTS);
@@ -156,6 +174,14 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
 
   broadcastToWebApps('WA_EVT_RUN_STARTED', { testCaseId: testCase.id });
 
+  // Reset variables only when NOT running as part of a suite
+  // (suite-level reset happens in runTestSuite)
+  if (!suiteMeta) {
+    // Load persisted variables from storage instead of clearing
+    const savedVars = await getAll(STORAGE_KEYS.VARIABLES);
+    runVariables = savedVars || {};
+  }
+
   for (const step of testCase.steps) {
     if (cancelRun) break;
     const objEntry = objects.find((o) => o.id === step.objectId);
@@ -163,20 +189,99 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
     const start = Date.now();
 
     let result;
+    let causedReload = false;
+
     if (step.action === 'wait') {
       await new Promise((r) => setTimeout(r, step.waitMs || 500));
       result = { status: 'pass', message: 'OK' };
-    } else if (!objEntry) {
-      result = { status: 'fail', message: 'Object khong ton tai trong repository' };
-    } else {
+    } else if (step.action === 'openurl') {
+      // Open URL in the target tab
+      try {
+        await chrome.tabs.update(tabId, { url: step.value });
+        // Wait for page to fully load
+        await new Promise((resolve) => {
+          const checkInterval = setInterval(() => {
+            chrome.tabs.get(tabId).then((tab) => {
+              if (tab && tab.status === 'complete') {
+                clearInterval(checkInterval);
+                resolve();
+              }
+            }).catch(() => {
+              clearInterval(checkInterval);
+              resolve();
+            });
+          }, 200);
+          setTimeout(resolve, 30000);
+        });
+        // Extra wait for SAP UI / SPA to finish rendering
+        await new Promise((r) => setTimeout(r, 2000));
+        // Re-inject content script after navigation (content scripts are lost on navigation)
+        await ensureContentScriptInjected(tabId);
+        // Wait for content script to be ready
+        await new Promise((r) => setTimeout(r, 500));
+        result = { status: 'pass', message: `Opened: ${step.value}` };
+      } catch (e) {
+        result = { status: 'fail', message: `Error opening URL: ${e.message}` };
+      }
+    } else if (step.action === 'extract') {
+      // Extract action - find element, read value, store in variable
       try {
         result = await chrome.tabs.sendMessage(tabId, {
           type: 'BG_EXECUTE_STEP',
           step,
           selectors: objEntry.selectors,
         });
+        if (result.status === 'pass' && result.extractedValue !== undefined) {
+          const varName = step.variableName || 'extractedValue';
+          runVariables[varName] = result.extractedValue;
+          // Persist to storage so variables survive across runs
+          await setAll(STORAGE_KEYS.VARIABLES, runVariables);
+          broadcastToWebApps('WA_EVT_VARIABLE_SET', { variableName: varName, value: result.extractedValue });
+        }
       } catch (e) {
-        result = { status: 'fail', message: `Loi giao tiep voi trang: ${e.message}` };
+        result = { status: 'fail', message: `Extract error: ${e.message}` };
+      }
+    } else if (step.action === 'sendkey' && (step.value || '').includes('F5')) {
+      // Handle F5 reload directly in background - wait for page to fully load
+      try {
+        await chrome.tabs.reload(tabId);
+        // Wait for page to reach 'complete' state
+        await new Promise((resolve) => {
+          const checkInterval = setInterval(() => {
+            chrome.tabs.get(tabId).then((tab) => {
+              if (tab && tab.status === 'complete') {
+                clearInterval(checkInterval);
+                resolve();
+              }
+            }).catch(() => {
+              // Tab closed
+              clearInterval(checkInterval);
+              resolve();
+            });
+          }, 200);
+          // Safety timeout after 30 seconds
+          setTimeout(resolve, 30000);
+        });
+        // Extra wait for SAP UI / SPA to finish initial rendering
+        await new Promise((r) => setTimeout(r, 2000));
+        result = { status: 'pass', message: 'OK' };
+        causedReload = true;
+      } catch (e) {
+        result = { status: 'fail', message: `Error reloading page: ${e.message}` };
+      }
+    } else if (!objEntry) {
+      result = { status: 'fail', message: 'Object does not exist in repository' };
+    } else {
+      // Resolve variables in step value before sending to content script
+      const resolvedStep = resolveVariables(step);
+      try {
+        result = await chrome.tabs.sendMessage(tabId, {
+          type: 'BG_EXECUTE_STEP',
+          step: resolvedStep,
+          selectors: objEntry.selectors,
+        });
+      } catch (e) {
+        result = { status: 'fail', message: `Communication error with page: ${e.message}` };
       }
     }
 
@@ -193,11 +298,31 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
       status: result.status,
       message: result.message,
       durationMs: Date.now() - start,
+      screenshotDataUrl, // Store screenshot in report so it persists after reload
     });
     // Send screenshot to web app in real-time (not stored in chrome.storage to avoid quota exceeded)
     broadcastToWebApps('WA_EVT_STEP_RESULT', { stepId: step.id, status: result.status, message: result.message, screenshotDataUrl });
 
     if (result.status === 'fail') report.overallStatus = 'fail';
+
+    // After a reload (F5), re-inject content script and wait for page to be fully ready
+    if (causedReload) {
+      await ensureContentScriptInjected(tabId);
+      // Wait for page to be interactive (SAP UI frameworks need extra time)
+      try {
+        const checkResult = await chrome.tabs.sendMessage(tabId, {
+          type: 'BG_CHECK_PAGE_READY',
+        });
+        if (!checkResult || !checkResult.ready) {
+          // Page not ready yet, wait a bit more
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      } catch (e) {
+        // Content script not ready, wait and retry
+        await new Promise((r) => setTimeout(r, 2000));
+        await ensureContentScriptInjected(tabId);
+      }
+    }
 
     // After click, wait for next step's element to appear AND be ready (SPA navigation)
     if (step.action === 'click' && result.status === 'pass') {
@@ -222,6 +347,11 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
       report.overallStatus = 'pass';
     }
   }
+  // Only reset cancel flag when NOT running as part of a suite
+  // (runTestSuite handles the reset at the end)
+  if (!suiteMeta) {
+    cancelRun = false;
+  }
   report.finishedAt = Date.now();
 
   const reports = await getAll(STORAGE_KEYS.REPORTS);
@@ -239,12 +369,19 @@ async function runTestSuite(tabId, suite) {
   const suiteRunId = uid('suiterun');
   const count = suite.testCaseIds.length;
 
+  // Reset variables at suite level (not per test case) so extracted values persist
+  runVariables = {};
+  await setAll(STORAGE_KEYS.VARIABLES, runVariables);
+
   broadcastToWebApps('WA_EVT_SUITE_STARTED', {
     suiteRunId,
     suiteId: suite.id,
     suiteName: suite.name,
     testCaseIds: suite.testCaseIds,
   });
+
+  // Broadcast initial empty variables state
+  broadcastToWebApps('WA_EVT_VARIABLES_RESET', {});
 
   let overallStatus = 'pass';
   for (let i = 0; i < suite.testCaseIds.length; i++) {
@@ -382,13 +519,14 @@ chrome.runtime.onConnectExternal.addListener((port) => {
           break;
         }
         case 'WA_GET_ALL_DATA': {
-          const [objects, testCases, testSuites, reports] = await Promise.all([
+          const [objects, testCases, testSuites, reports, variables] = await Promise.all([
             getAll(STORAGE_KEYS.OBJECTS),
             getAll(STORAGE_KEYS.TEST_CASES),
             getAll(STORAGE_KEYS.TEST_SUITES),
             getAll(STORAGE_KEYS.REPORTS),
+            getAll(STORAGE_KEYS.VARIABLES),
           ]);
-          port.postMessage({ type: 'WA_ALL_DATA', objects, testCases, testSuites, reports });
+          port.postMessage({ type: 'WA_ALL_DATA', objects, testCases, testSuites, reports, variables });
           break;
         }
         case 'WA_SAVE_TEST_CASE': {
