@@ -98,6 +98,7 @@ export function renderTestCaseSelectors() {
   const hasActive = !!state.activeTestCaseId;
   if (els.btnRecordToggle) els.btnRecordToggle.disabled = !hasActive;
   if (els.btnDeleteTestcase) els.btnDeleteTestcase.disabled = !hasActive;
+  if (els.btnExportTc) els.btnExportTc.disabled = !hasActive;
 }
 
 // ---------------- Object Select ----------------

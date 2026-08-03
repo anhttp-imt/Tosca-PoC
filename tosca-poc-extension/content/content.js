@@ -88,6 +88,20 @@
         if (t) return t;
       }
     }
+    
+    // For buttons/links, the visible text IS the label - prefer it over placeholder/name                                                                
+    const tag = el.tagName.toLowerCase();                                                                                                                
+    const type = (el.getAttribute('type') || '').toLowerCase();                                                                                          
+    const role = (el.getAttribute('role') || '').toLowerCase();                                                                                          
+      const isButtonLike =                                                                                                                                 
+      tag === 'button' ||                                                                                                                                
+      tag === 'a' ||                                                                                                                                     
+      (tag === 'input' && ['submit', 'button', 'reset'].includes(type)) ||                                                                               
+      ['button', 'link', 'tab', 'menuitem'].includes(role);                                                                                              
+      if (isButtonLike) {                                                                                                                                  
+        const btnText = (el.innerText || el.value || '').trim().replace(/\s+/g, ' ');                                                                      
+        if (btnText) return btnText;                                                                                                                       
+    }
 
     const placeholder = el.getAttribute('placeholder');
     if (placeholder && placeholder.trim()) return placeholder.trim();

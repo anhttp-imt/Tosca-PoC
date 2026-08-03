@@ -525,6 +525,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ objects });
         break;
       }
+      case 'SP_SAVE_ALL_OBJECTS': {
+        if (message.objects !== undefined) {
+          await setAll(STORAGE_KEYS.OBJECTS, message.objects);
+          notifyWebAppsDataChanged();
+        }
+        sendResponse({ ok: true });
+        break;
+      }
       default:
         break;
     }

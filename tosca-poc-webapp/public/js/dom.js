@@ -24,6 +24,9 @@ const tabCacheFns = {
       stepValueInput: $('step-value-input'),
       stepVariableNameInput: $('step-variable-name-input'),
       btnAddStep: $('btn-add-step'),
+      btnExportTc: $('btn-export-tc'),
+      btnImportTc: $('btn-import-tc'),
+      importTcFileInput: $('import-tc-file-input'),
     });
   },
   suite() {
@@ -35,6 +38,9 @@ const tabCacheFns = {
       suiteEmpty: $('suite-empty'),
       suiteAddTestcaseSelect: $('suite-add-testcase-select'),
       btnSuiteAddTestcase: $('btn-suite-add-testcase'),
+      btnExportSuite: $('btn-export-suite'),
+      btnImportSuite: $('btn-import-suite'),
+      importSuiteFileInput: $('import-suite-file-input'),
     });
   },
   run() {
