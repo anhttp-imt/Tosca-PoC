@@ -24,8 +24,6 @@
           <span class="item-actions">
             <button data-action="rename" title="Rename">✎</button>
             <button data-action="delete" title="Delete">🗑</button>
-            <button data-action="rename" title="Rename">✎</button>
-            <button data-action="delete" title="Delete">🗑</button>
           </span>
         </div>
         <span class="item-sub"></span>
