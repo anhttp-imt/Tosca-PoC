@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <title>Tosca PoC — Web App</title>
-<link rel="stylesheet" href="app.css?v=2026073105" />
+<link rel="stylesheet" href="css/app.css?v=2026073105" />
 </head>
 <body>
   <header class="app-header">
@@ -31,90 +31,7 @@
   </nav>
 
   <main>
-    <section id="tab-builder" class="tab-panel active">
-      <div class="toolbar">
-        <select id="testcase-select"></select>
-        <button id="btn-new-testcase" class="btn">+ New Test Case</button>
-      </div>
-      <div class="toolbar">
-        <button id="btn-record-toggle" class="btn btn-danger" disabled>Start Record</button>
-        <button id="btn-delete-testcase" class="btn btn-ghost" disabled>Delete Test Case</button>
-      </div>
-      <p class="hint">Record: all clicks/inputs on the Target Tab will automatically be added as steps. Or add steps manually below. Objects are taken from the Object Repository scanned in the extension.</p>
-      <ol id="step-list" class="item-list"></ol>
-      <p id="step-empty" class="empty-hint">No steps yet.</p>
-
-      <div class="add-step-form">
-        <select id="step-object-select"></select>
-        <select id="step-action-select">
-          <option value="click">Click</option>
-          <option value="input">Input</option>
-          <option value="select">Select</option>
-          <option value="extract">Extract</option>
-          <option value="verify">Verify Text</option>
-          <option value="wait">Wait</option>
-          <option value="openurl">Open URL</option>
-          <option value="sendkey">Send Key</option>
-        </select>
-        <input id="step-value-input" type="text" placeholder="Value / expected text / ms" />
-        <input id="step-variable-name-input" type="text" placeholder="Variable name (for Extract)" style="display:none;" />
-        <button id="btn-add-step" class="btn">+ Add Step</button>
-      </div>
-    </section>
-
-    <section id="tab-suite" class="tab-panel">
-      <div class="toolbar">
-        <select id="suite-select"></select>
-        <button id="btn-new-suite" class="btn">+ New Suite</button>
-        <button id="btn-delete-suite" class="btn btn-ghost" disabled>Delete Suite</button>
-      </div>
-      <p class="hint">Combine multiple test cases (from different features) into a single sequential workflow. If a test case fails, the suite stops immediately and does not run the remaining test cases.</p>
-      <ol id="suite-item-list" class="item-list"></ol>
-      <p id="suite-empty" class="empty-hint">Suite has no test cases yet.</p>
-
-      <div class="add-step-form">
-        <select id="suite-add-testcase-select"></select>
-        <button id="btn-suite-add-testcase" class="btn">+ Add to Suite</button>
-      </div>
-    </section>
-
-    <section id="tab-run" class="tab-panel">
-      <div class="toolbar">
-        <select id="run-mode-select">
-          <option value="testcase">Run: Single Test Case</option>
-          <option value="suite">Run: Suite</option>
-        </select>
-      </div>
-      <div class="toolbar" id="run-mode-testcase">
-        <select id="run-testcase-select"></select>
-      </div>
-      <div class="toolbar" id="run-mode-suite" style="display:none;">
-        <select id="run-suite-select"></select>
-      </div>
-      <div class="toolbar">
-        <button id="btn-run-testcase" class="btn btn-primary">▶ Run</button>
-        <button id="btn-run-suite" class="btn btn-primary">▶ Run Suite</button>
-        <button id="btn-cancel-run" class="btn btn-danger" disabled>⏹ Cancel</button>
-      </div>
-
-      <!-- Variables display panel -->
-      <div id="variables-panel" class="variables-panel" style="display:none;">
-        <h3>Variables</h3>
-        <div id="variables-list" class="variables-list"></div>
-      </div>
-
-      <div id="run-step-list" class="item-list"></div>
-      <p id="run-empty" class="empty-hint">Select a test case or suite then click Run.</p>
-    </section>
-
-    <section id="tab-report" class="tab-panel">
-      <div class="toolbar">
-        <button id="btn-clear-reports" class="btn btn-ghost">Clear History</button>
-        <button id="btn-clear-storage" class="btn btn-ghost btn-danger">🗑 Clear All Storage</button>
-      </div>
-      <div id="report-list"></div>
-      <p id="report-empty" class="empty-hint">No runs yet.</p>
-    </section>
+    <!-- Tab panels are lazy-loaded from templates/ -->
   </main>
 
   <!-- Step Edit Modal -->
@@ -158,6 +75,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=2026073105"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
