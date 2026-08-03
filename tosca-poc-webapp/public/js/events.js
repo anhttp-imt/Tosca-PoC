@@ -144,7 +144,7 @@ export function wireBuilderEvents() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tosca-tc-${tc.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+    a.download = `imt-s4hana-tc-${tc.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
     a.click();
     URL.revokeObjectURL(url);
   });
@@ -251,7 +251,7 @@ export function wireSuiteEvents() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tosca-suite-${suite.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+    a.download = `s4hana-suite-${suite.name.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
     a.click();
     URL.revokeObjectURL(url);
   });
