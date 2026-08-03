@@ -52,8 +52,59 @@
     if (labelEl) labelEl.style.display = 'none';
   }
 
+  function getWrappingLabelText(el) {
+    const label = el.closest('label');
+    if (!label) return '';
+    const clone = label.cloneNode(true);
+    clone.querySelectorAll('input, select, textarea').forEach((n) => n.remove());
+    return (clone.textContent || '').trim().replace(/\s+/g, ' ');
+  }
+
+  function getSemanticName(el) {
+    if (el.id) {
+      try {
+        const escapedId = window.CSS && CSS.escape ? CSS.escape(el.id) : el.id;
+        const label = document.querySelector(`label[for="${escapedId}"]`);
+        if (label) {
+          const t = (label.textContent || '').trim().replace(/\s+/g, ' ');
+          if (t) return t;
+        }
+      } catch (e) {
+        // invalid id for selector, skip
+      }
+    }
+
+    const wrapText = getWrappingLabelText(el);
+    if (wrapText) return wrapText;
+
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
+
+    const ariaLabelledby = el.getAttribute('aria-labelledby');
+    if (ariaLabelledby) {
+      const ref = document.getElementById(ariaLabelledby);
+      if (ref) {
+        const t = (ref.textContent || '').trim().replace(/\s+/g, ' ');
+        if (t) return t;
+      }
+    }
+
+    const placeholder = el.getAttribute('placeholder');
+    if (placeholder && placeholder.trim()) return placeholder.trim();
+
+    const title = el.getAttribute('title');
+    if (title && title.trim()) return title.trim();
+
+    const name = el.getAttribute('name');
+    if (name && name.trim()) return name.trim();
+
+    return '';
+  }
+
   function describeElement(el) {
     const tag = el.tagName.toLowerCase();
+    const semanticName = getSemanticName(el);
+    if (semanticName) return semanticName.slice(0, 40);
     const idPart = el.id ? `#${el.id}` : '';
     const text = (el.innerText || el.value || '').trim().slice(0, 24);
     return `${tag}${idPart}${text ? ' "' + text + '"' : ''}`;
@@ -105,6 +156,54 @@
     document.removeEventListener('mousemove', onScanMouseMove, true);
     document.removeEventListener('click', onScanClick, true);
     hideOverlay();
+  }
+
+  // ---------------- Scan All mode ----------------
+
+  const SCANNABLE_SELECTOR = [
+    'a[href]', 'button', 'input', 'select', 'textarea', 'label',
+    '[role="button"]', '[role="link"]', '[role="checkbox"]', '[role="radio"]',
+    '[role="tab"]', '[role="menuitem"]', '[role="switch"]', '[role="combobox"]',
+    '[onclick]', '[tabindex]:not([tabindex="-1"])',
+  ].join(',');
+
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
+    return true;
+  }
+
+  function scanAllElements() {
+    const seen = new Set();
+    const results = [];
+    const nodeList = document.querySelectorAll(SCANNABLE_SELECTOR);
+    nodeList.forEach((el) => {
+      if (isIgnorableElement(el) || seen.has(el)) return;
+      seen.add(el);
+      if (el.disabled) return;
+      if (!isVisible(el)) return;
+      const selectors = ToscaSelectorUtils.generateSelectors(el);
+      results.push({
+        name: describeElement(el),
+        selectors,
+        tagName: el.tagName.toLowerCase(),
+        pageUrlPattern: location.origin + location.pathname,
+        capturedAt: Date.now(),
+      });
+    });
+    return results;
+  }
+
+  function highlightBySelectors(selectors) {
+    const el = ToscaSelectorUtils.findElement(selectors || {});
+    if (el) {
+      ensureOverlay();
+      positionOverlay(el, overlayEl, labelEl);
+    } else {
+      hideOverlay();
+    }
   }
 
   // ---------------- Record mode ----------------
@@ -360,6 +459,17 @@
         return;
       case 'BG_DISABLE_SCAN':
         disableScanMode();
+        sendResponse({ ok: true });
+        return;
+      case 'BG_SCAN_ALL':
+        sendResponse({ objects: scanAllElements() });
+        return;
+      case 'BG_HIGHLIGHT_ELEMENT':
+        highlightBySelectors(message.selectors);
+        sendResponse({ ok: true });
+        return;
+      case 'BG_UNHIGHLIGHT_ELEMENT':
+        hideOverlay();
         sendResponse({ ok: true });
         return;
       case 'BG_ENABLE_RECORD':

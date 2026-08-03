@@ -463,6 +463,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
+      case 'SP_SCAN_ALL': {
+        const tabId = await getActiveTabId();
+        if (!tabId || !(await ensureContentScriptInjected(tabId))) {
+          sendResponse({ objects: [] });
+          break;
+        }
+        try {
+          const result = await chrome.tabs.sendMessage(tabId, { type: 'BG_SCAN_ALL' });
+          sendResponse({ objects: (result && result.objects) || [] });
+        } catch (e) {
+          sendResponse({ objects: [] });
+        }
+        break;
+      }
+      case 'SP_ADD_SCANNED_OBJECTS': {
+        const objects = await getAll(STORAGE_KEYS.OBJECTS);
+        const added = [];
+        for (const entry of message.entries || []) {
+          const obj = { id: uid('obj'), ...entry };
+          objects.push(obj);
+          added.push(obj);
+        }
+        await setAll(STORAGE_KEYS.OBJECTS, objects);
+        added.forEach((entry) => broadcastToSidePanel('EVT_OBJECT_ADDED', { entry }));
+        notifyWebAppsDataChanged();
+        sendResponse({ ok: true, added });
+        break;
+      }
+      case 'SP_HIGHLIGHT_ELEMENT': {
+        const tabId = await getActiveTabId();
+        if (tabId) chrome.tabs.sendMessage(tabId, { type: 'BG_HIGHLIGHT_ELEMENT', selectors: message.selectors }).catch(() => {});
+        sendResponse({ ok: true });
+        break;
+      }
+      case 'SP_UNHIGHLIGHT_ELEMENT': {
+        const tabId = await getActiveTabId();
+        if (tabId) chrome.tabs.sendMessage(tabId, { type: 'BG_UNHIGHLIGHT_ELEMENT' }).catch(() => {});
+        sendResponse({ ok: true });
+        break;
+      }
       case 'SP_DELETE_OBJECT': {
         let objects = await getAll(STORAGE_KEYS.OBJECTS);
         objects = objects.filter((o) => o.id !== message.objectId);

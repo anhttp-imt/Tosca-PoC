@@ -22,12 +22,30 @@
 
     <div class="toolbar">
       <button id="btn-scan-toggle" class="btn btn-primary">Start Scan</button>
+      <button id="btn-scan-all" class="btn">Scan All</button>
     </div>
-    <p class="hint">Enable Scan then hover/click elements on the open page to capture them into the Object Repository. Test Builder / Record / Run / Report are now in a separate Web App (see README).</p>
+    <p class="hint">Enable Scan then hover/click elements on the open page to capture them into the Object Repository. Or use Scan All to list every interactable element at once and pick which ones to keep.</p>
 
     <ul id="object-list" class="item-list"></ul>
     <p id="object-empty" class="empty-hint">No Object</p>
   </main>
+
+  <div id="scan-all-panel" class="scan-all-panel hidden">
+    <div class="scan-all-header">
+      <strong>Scan All Results</strong>
+      <button id="btn-scan-all-close" class="btn btn-ghost" title="Close">✕</button>
+    </div>
+    <input id="scan-all-filter" type="text" class="scan-all-filter" placeholder="Filter by name/tag/text..." />
+    <label class="scan-all-select-all">
+      <input type="checkbox" id="scan-all-select-all-cb" />
+      Select All (<span id="scan-all-count">0</span>)
+    </label>
+    <ul id="scan-all-list" class="item-list scan-all-list"></ul>
+    <p id="scan-all-empty" class="empty-hint">No elements found</p>
+    <div class="scan-all-actions">
+      <button id="btn-scan-all-add" class="btn btn-primary" disabled>Add Selected</button>
+    </div>
+  </div>
 
   <script src="sidepanel.js"></script>
 </body>

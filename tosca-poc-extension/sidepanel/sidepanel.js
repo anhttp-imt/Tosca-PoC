@@ -1,11 +1,16 @@
 (function () {
   const state = { objects: [], scanning: false };
+  const scanAllState = { results: [], selected: new Set(), filter: '' };
   const els = {};
 
   function $(id) { return document.getElementById(id); }
 
   function send(type, payload) {
     return chrome.runtime.sendMessage({ type, ...payload });
+  }
+
+  function bestSelector(selectors) {
+    return selectors.id || selectors.dataTestId || selectors.name || selectors.css || selectors.xpath || '';
   }
 
   function renderObjects() {
@@ -16,8 +21,7 @@
     state.objects.forEach((obj) => {
       const li = document.createElement('li');
       li.className = 'item-card';
-      const bestSelector =
-        obj.selectors.id || obj.selectors.dataTestId || obj.selectors.name || obj.selectors.css || obj.selectors.xpath;
+      const bestSelectorText = bestSelector(obj.selectors);
       li.innerHTML = `
         <div class="item-card-row">
           <span class="item-title"></span>
@@ -31,7 +35,7 @@
       `;
       li.querySelector('.item-title').textContent = obj.name;
       const subs = li.querySelectorAll('.item-sub');
-      subs[0].textContent = `selector: ${bestSelector}`;
+      subs[0].textContent = `selector: ${bestSelectorText}`;
       subs[1].textContent = obj.pageUrlPattern;
       li.querySelector('[data-action="rename"]').addEventListener('click', async () => {
         const name = prompt('New Object Name:', obj.name);
@@ -48,6 +52,100 @@
       });
       list.appendChild(li);
     });
+  }
+
+  // ---------------- Scan All ----------------
+
+  function matchesFilter(candidate, filter) {
+    if (!filter) return true;
+    const haystack = `${candidate.name} ${candidate.tagName} ${candidate.selectors.text || ''}`.toLowerCase();
+    return haystack.includes(filter);
+  }
+
+  function updateScanAllControls() {
+    const visibleIndexes = scanAllState.results
+      .map((_, i) => i)
+      .filter((i) => matchesFilter(scanAllState.results[i], scanAllState.filter));
+    const visibleSelectedCount = visibleIndexes.filter((i) => scanAllState.selected.has(i)).length;
+    els.scanAllSelectAllCb.checked = visibleIndexes.length > 0 && visibleSelectedCount === visibleIndexes.length;
+    els.scanAllCount.textContent = String(scanAllState.selected.size);
+    els.btnScanAllAdd.disabled = scanAllState.selected.size === 0;
+  }
+
+  function renderScanAllList() {
+    const list = els.scanAllList;
+    list.innerHTML = '';
+    const filter = scanAllState.filter;
+    const visible = scanAllState.results
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(({ candidate }) => matchesFilter(candidate, filter));
+
+    els.scanAllEmpty.classList.toggle('visible', visible.length === 0);
+
+    visible.forEach(({ candidate, index }) => {
+      const li = document.createElement('li');
+      li.className = 'item-card scan-all-item';
+      li.innerHTML = `
+        <div class="item-card-row">
+          <input type="checkbox" class="scan-all-cb" />
+          <span class="item-title"></span>
+        </div>
+        <span class="item-sub"></span>
+      `;
+      li.querySelector('.item-title').textContent = `${candidate.name} (${candidate.tagName})`;
+      li.querySelector('.item-sub').textContent = `selector: ${bestSelector(candidate.selectors)}`;
+      const cb = li.querySelector('.scan-all-cb');
+      cb.checked = scanAllState.selected.has(index);
+      cb.addEventListener('change', () => {
+        if (cb.checked) scanAllState.selected.add(index);
+        else scanAllState.selected.delete(index);
+        updateScanAllControls();
+      });
+      li.addEventListener('mouseenter', () => {
+        send('SP_HIGHLIGHT_ELEMENT', { selectors: candidate.selectors });
+      });
+      li.addEventListener('mouseleave', () => {
+        send('SP_UNHIGHLIGHT_ELEMENT');
+      });
+      list.appendChild(li);
+    });
+
+    updateScanAllControls();
+  }
+
+  function openScanAllPanel() {
+    els.scanAllPanel.classList.remove('hidden');
+  }
+
+  function closeScanAllPanel() {
+    els.scanAllPanel.classList.add('hidden');
+    send('SP_UNHIGHLIGHT_ELEMENT');
+    scanAllState.results = [];
+    scanAllState.selected = new Set();
+    scanAllState.filter = '';
+    els.scanAllFilter.value = '';
+  }
+
+  async function runScanAll() {
+    els.btnScanAll.disabled = true;
+    els.btnScanAll.textContent = 'Scanning...';
+    try {
+      const data = await send('SP_SCAN_ALL');
+      scanAllState.results = (data && data.objects) || [];
+      scanAllState.selected = new Set();
+      renderScanAllList();
+      openScanAllPanel();
+    } finally {
+      els.btnScanAll.disabled = false;
+      els.btnScanAll.textContent = 'Scan All';
+    }
+  }
+
+  async function addSelectedScannedObjects() {
+    const entries = Array.from(scanAllState.selected).map((i) => scanAllState.results[i]);
+    if (entries.length === 0) return;
+    await send('SP_ADD_SCANNED_OBJECTS', { entries });
+    closeScanAllPanel();
   }
 
   function setScanning(on) {
@@ -68,6 +166,28 @@
       els.btnCopyId.textContent = 'Đã copy!';
       setTimeout(() => { els.btnCopyId.textContent = 'Copy'; }, 1200);
     });
+
+    els.btnScanAll.addEventListener('click', runScanAll);
+    els.btnScanAllClose.addEventListener('click', closeScanAllPanel);
+    els.btnScanAllAdd.addEventListener('click', addSelectedScannedObjects);
+
+    els.scanAllFilter.addEventListener('input', () => {
+      scanAllState.filter = els.scanAllFilter.value.trim().toLowerCase();
+      renderScanAllList();
+    });
+
+    els.scanAllSelectAllCb.addEventListener('change', () => {
+      const filter = scanAllState.filter;
+      const visibleIndexes = scanAllState.results
+        .map((_, i) => i)
+        .filter((i) => matchesFilter(scanAllState.results[i], filter));
+      if (els.scanAllSelectAllCb.checked) {
+        visibleIndexes.forEach((i) => scanAllState.selected.add(i));
+      } else {
+        visibleIndexes.forEach((i) => scanAllState.selected.delete(i));
+      }
+      renderScanAllList();
+    });
   }
 
   chrome.runtime.onMessage.addListener((message) => {
@@ -85,6 +205,15 @@
       objectList: $('object-list'),
       objectEmpty: $('object-empty'),
       btnScanToggle: $('btn-scan-toggle'),
+      btnScanAll: $('btn-scan-all'),
+      scanAllPanel: $('scan-all-panel'),
+      btnScanAllClose: $('btn-scan-all-close'),
+      scanAllFilter: $('scan-all-filter'),
+      scanAllSelectAllCb: $('scan-all-select-all-cb'),
+      scanAllCount: $('scan-all-count'),
+      scanAllList: $('scan-all-list'),
+      scanAllEmpty: $('scan-all-empty'),
+      btnScanAllAdd: $('btn-scan-all-add'),
     });
 
     els.extId.textContent = chrome.runtime.id;

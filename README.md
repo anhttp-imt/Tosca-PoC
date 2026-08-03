@@ -37,9 +37,20 @@ Open `http://localhost:8787` in **its own tab** (not the tab under test).
 ## 4. Basic test flow
 
 ### a. Scan objects (in the Extension Side Panel)
+
+Two ways to build the Object Repository — pick whichever fits the page:
+
+**Manual scan (hover & click one at a time)**
 1. Open the extension's Side Panel, click **Start Scan**.
 2. On the tab under test (not the Web App tab), hover the mouse to see the orange highlight box, click the elements you want to use (e.g. the Username field, Password field, Login button).
 3. Elements appear in the Side Panel's Object Repository, and are automatically synced to the Web App.
+4. Click **Stop Scan** when done.
+
+**Scan All (scan the whole page at once)**
+1. Click **Scan All** — the extension scans the tab under test in one pass for every interactable element (`input`, `button`, `a`, `select`, `textarea`, `label`, elements with `role`/`onclick`/`tabindex`, etc.), skipping hidden or disabled ones.
+2. A results panel opens with a checklist of candidates. Hover a row to preview it (orange highlight box on the page under test), and use the filter box to narrow down by name/tag/text.
+3. Tick the elements you want (or **Select All**), then click **Add Selected** — they're added to the Object Repository the same way as manual scan, synced to the Web App.
+4. **Scan All** is faster for pages with many fields; fall back to the manual hover/click scan for one-off elements or when a specific element's auto-generated selector isn't stable enough (e.g. deeply dynamic SAP UI5/Angular IDs — pick it manually and rename it if needed).
 
 ### b. Test Builder — add steps manually (in the Web App)
 1. **Test Builder** tab → **+ New test case**, give it a name.
@@ -67,6 +78,7 @@ Open `http://localhost:8787` in **its own tab** (not the tab under test).
 ## PoC limitations (see also `tosca-poc-plan.md`)
 
 - No support for nested iframes, no support for running multiple tabs in parallel.
+- **Scan All** only detects elements matching a fixed interactive selector list (`input`/`button`/`a`/`select`/`textarea`/`label`/`[role]`/`[onclick]`/`[tabindex]`); elements made interactive purely via JS event listeners with none of those attributes won't show up — use the manual hover/click scan for those.
 - No data-driven testing, no Requirement/Risk-based design module.
 - No CI/CD runner — only runs through the Web App UI / Side Panel.
 - Suite runs fail-fast (stops immediately on a failed test case), no "run everything then summarize" or retry option.
