@@ -8,6 +8,16 @@ export function fmtTime(ts) {
   return new Date(ts).toLocaleString('en-US');
 }
 
+export function showScreenshotPreview(dataUrl) {
+  els.screenshotPreviewImg.src = dataUrl;
+  els.screenshotOverlay.classList.add('active');
+}
+
+export function hideScreenshotPreview() {
+  els.screenshotOverlay.classList.remove('active');
+  els.screenshotPreviewImg.src = '';
+}
+
 export function buildReportCard(report) {
   const card = document.createElement('div');
   card.className = 'report-card';
@@ -27,7 +37,7 @@ export function buildReportCard(report) {
     const row = document.createElement('div');
     row.className = 'report-step-row';
     row.innerHTML = `
-      ${s.screenshotDataUrl ? `<img src="${s.screenshotDataUrl}" alt="screenshot" />` : ''}
+      ${s.screenshotDataUrl ? `<img src="${s.screenshotDataUrl}" alt="screenshot" class="report-screenshot-thumb" />` : ''}
       <div class="report-step-info">
         <div><span class="status-chip status-${s.status}">${s.status}</span> step ${idx + 1} (${s.durationMs}ms)</div>
         <div class="report-step-msg"></div>
@@ -35,7 +45,10 @@ export function buildReportCard(report) {
     `;
     row.querySelector('.report-step-msg').textContent = s.message || '';
     const img = row.querySelector('img');
-    if (img) img.addEventListener('click', () => window.open(s.screenshotDataUrl, '_blank'));
+    if (img) img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showScreenshotPreview(s.screenshotDataUrl);
+    });
     body.appendChild(row);
   });
 

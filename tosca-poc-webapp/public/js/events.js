@@ -15,7 +15,7 @@ import {
   renderVariables,
   expandedTestCaseIds,
 } from './run.js';
-import { renderReports } from './report.js';
+import { renderReports, hideScreenshotPreview } from './report.js';
 
 // ==================== Shared Events ====================
 
@@ -38,6 +38,12 @@ export function wireSharedEvents() {
   els.btnModalSave.addEventListener('click', saveStepEdit);
   els.stepEditOverlay.addEventListener('click', (e) => {
     if (e.target === els.stepEditOverlay) closeStepEditModal();
+  });
+
+  // Screenshot preview modal (shared across tabs)
+  els.btnScreenshotClose.addEventListener('click', hideScreenshotPreview);
+  els.screenshotOverlay.addEventListener('click', (e) => {
+    if (e.target === els.screenshotOverlay) hideScreenshotPreview();
   });
 
   // Show/hide variable name row when action changes in modal
@@ -244,16 +250,21 @@ export function wireRunEvents() {
 // ==================== Report Tab Events ====================
 
 export function wireReportEvents() {
-  els.btnClearReports.addEventListener('click', () => {
+  els.btnClearReports.addEventListener('click', async () => {
     if (!confirm(
       '🗑 Delete report history\n\n' +
       'This will delete all saved test results (PASS/FAIL).\n' +
       'Objects, Test Cases, and Test Suites remain unaffected.\n\n' +
       'Are you sure you want to continue?'
     )) return;
-    sendToExtension('WA_CLEAR_REPORTS');
-    state.reports = [];
-    renderReports();
+    // Clear reports from server
+    try {
+      await fetch('/api/reports', { method: 'DELETE' });
+      state.reports = [];
+      renderReports();
+    } catch (e) {
+      alert('Failed to clear reports: ' + e.message);
+    }
   });
 
   els.btnClearStorage.addEventListener('click', () => {

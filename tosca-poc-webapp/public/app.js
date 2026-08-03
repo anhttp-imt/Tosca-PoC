@@ -47,7 +47,6 @@ function handlePortMessage(message) {
       state.objects = message.objects || [];
       state.testCases = message.testCases || [];
       state.testSuites = message.testSuites || [];
-      state.reports = message.reports || [];
       state.variables = message.variables || {};
       renderVariables();
       renderStepObjectOptions();
@@ -59,7 +58,8 @@ function handlePortMessage(message) {
       if (els.runModeSelect && els.runModeSelect.value === 'suite') {
         renderSuitePreview();
       }
-      renderReports();
+      // Reports are loaded from server API, not from extension
+      loadReportsFromServer();
       break;
     case 'WA_EVT_OBJECT_ADDED':
       if (!state.objects.some((o) => o.id === message.entry.id)) state.objects.push(message.entry);
@@ -100,6 +100,8 @@ function handlePortMessage(message) {
     case 'WA_EVT_RUN_FINISHED':
       state.running = false;
       setRunButtonsState(false);
+      // Save report to server
+      saveReportToServer(message.report);
       state.reports.unshift(message.report);
       renderReports();
       break;
@@ -145,6 +147,42 @@ function handlePortMessage(message) {
   }
 }
 
+// ---------------- Report API Helpers ----------------
+
+async function loadReportsFromServer() {
+  try {
+    const res = await fetch('/api/reports');
+    state.reports = await res.json();
+    renderReports();
+  } catch (e) {
+    console.error('[Frontend] Failed to load reports from server:', e);
+  }
+}
+
+async function saveReportToServer(report) {
+  try {
+    console.log('[Frontend] Saving report to /api/reports:', report.id || report.name || 'unknown');
+    const res = await fetch('/api/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report),
+    });
+    const result = await res.json();
+  } catch (e) {
+    console.error('[Frontend] Failed to save report to server:', e);
+  }
+}
+
+async function clearReportsFromServer() {
+  try {
+    await fetch('/api/reports', { method: 'DELETE' });
+    state.reports = [];
+    renderReports();
+  } catch (e) {
+    console.error('Failed to clear reports:', e);
+  }
+}
+
 // ---------------- Init ----------------
 
 async function init() {
@@ -156,6 +194,9 @@ async function init() {
 
   // Wire shared events (connection, modal)
   wireSharedEvents();
+
+  // Load reports from server (independent of extension connection)
+  await loadReportsFromServer();
 
   // Initialize tabs with per-tab event wiring + refresh functions
   initTabs({

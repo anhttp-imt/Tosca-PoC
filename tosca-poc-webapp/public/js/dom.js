@@ -120,6 +120,10 @@ export function cacheElements() {
     btnModalClose: $('btn-modal-close'),
     btnModalCancel: $('btn-modal-cancel'),
     btnModalSave: $('btn-modal-save'),
+    // Screenshot preview modal elements (always present in index.html)
+    screenshotOverlay: $('screenshot-overlay'),
+    screenshotPreviewImg: $('screenshot-preview-img'),
+    btnScreenshotClose: $('btn-screenshot-close'),
   });
 }
 
