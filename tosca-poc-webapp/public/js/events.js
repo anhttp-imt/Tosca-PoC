@@ -6,6 +6,7 @@ import { connected, sendToExtension, connectToExtension, getTargetTabId } from '
 import { renderSteps, renderTestCaseSelectors, renderStepObjectOptions, persistActiveTestCase } from './builder.js';
 import { closeStepEditModal, saveStepEdit } from './modal.js';
 import { renderSuiteSelectors, renderSuiteItems, persistActiveSuite } from './suite.js';
+import * as api from './api.js';
 import {
   setRecording,
   setRunButtonsState,
@@ -64,6 +65,7 @@ export function wireBuilderEvents() {
     state.testCases.push(tc);
     state.activeTestCaseId = tc.id;
     sendToExtension('WA_SAVE_TEST_CASE', { testCase: tc });
+    api.saveTestCasesToServer();
     renderTestCaseSelectors();
     renderSteps();
   });
@@ -80,6 +82,7 @@ export function wireBuilderEvents() {
     sendToExtension('WA_DELETE_TEST_CASE', { testCaseId: tc.id });
     state.testCases = state.testCases.filter((t) => t.id !== tc.id);
     state.activeTestCaseId = null;
+    api.saveTestCasesToServer();
     renderTestCaseSelectors();
     renderSteps();
   });
@@ -181,6 +184,7 @@ export function wireBuilderEvents() {
         state.testCases.push(newTc);
         state.activeTestCaseId = newTc.id;
         sendToExtension('WA_SAVE_TEST_CASE', { testCase: newTc });
+        api.saveTestCasesToServer();
         renderTestCaseSelectors();
         renderSteps();
 
@@ -205,6 +209,7 @@ export function wireSuiteEvents() {
     state.testSuites.push(suite);
     state.activeSuiteId = suite.id;
     sendToExtension('WA_SAVE_TEST_SUITE', { suite });
+    api.saveTestSuitesToServer();
     renderSuiteSelectors();
     renderSuiteItems();
   });
@@ -221,6 +226,7 @@ export function wireSuiteEvents() {
     sendToExtension('WA_DELETE_TEST_SUITE', { suiteId: suite.id });
     state.testSuites = state.testSuites.filter((s) => s.id !== suite.id);
     state.activeSuiteId = null;
+    api.saveTestSuitesToServer();
     renderSuiteSelectors();
     renderSuiteItems();
   });
@@ -233,6 +239,7 @@ export function wireSuiteEvents() {
     suite.testCaseIds.push(tcId);
     renderSuiteItems();
     persistActiveSuite();
+    api.saveTestSuitesToServer();
   });
 
   // Export current suite as JSON
@@ -288,6 +295,7 @@ export function wireSuiteEvents() {
         state.testSuites.push(newSuite);
         state.activeSuiteId = newSuite.id;
         sendToExtension('WA_SAVE_TEST_SUITE', { suite: newSuite });
+        api.saveTestSuitesToServer();
         renderSuiteSelectors();
         renderSuiteItems();
 
@@ -392,8 +400,7 @@ export function wireReportEvents() {
     )) return;
     // Clear reports from server
     try {
-      await fetch('/api/reports', { method: 'DELETE' });
-      state.reports = [];
+      await api.clearReportsFromServer();
       renderReports();
     } catch (e) {
       alert('Failed to clear reports: ' + e.message);

@@ -219,6 +219,8 @@ async function runTestCase(tabId, testCase, suiteMeta = null) {
         await ensureContentScriptInjected(tabId);
         // Wait for content script to be ready
         await new Promise((r) => setTimeout(r, 500));
+        // Focus the target tab so user can see the navigation
+        await focusTab(tabId);
         result = { status: 'pass', message: `Opened: ${step.value}` };
       } catch (e) {
         result = { status: 'fail', message: `Error opening URL: ${e.message}` };

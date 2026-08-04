@@ -3,6 +3,7 @@
 import { state, getTestCase, getSuite, escapeHtml, uid } from './state.js';
 import { els } from './dom.js';
 import { sendToExtension } from './connection.js';
+import * as api from './api.js';
 
 // ---------------- Suite Selectors ----------------
 
@@ -108,6 +109,7 @@ export function persistActiveSuite() {
   const suite = getSuite(state.activeSuiteId);
   if (!suite) return;
   sendToExtension('WA_SAVE_TEST_SUITE', { suite });
+  api.saveTestSuitesToServer();
   renderSuiteSelectors();
 }
 

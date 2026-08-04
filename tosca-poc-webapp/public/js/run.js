@@ -1,6 +1,6 @@
 // Run tab: step list, suite preview, variables
 
-import { state, getTestCase, getObject, escapeHtml, stepSummary } from './state.js';
+import { state, getTestCase, getSuite, getObject, escapeHtml, stepSummary } from './state.js';
 import { els } from './dom.js';
 
 // Track expanded state per test case ID

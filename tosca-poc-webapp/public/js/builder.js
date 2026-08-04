@@ -4,6 +4,7 @@ import { state, getTestCase, getObject, escapeHtml, stepSummary, uid } from './s
 import { els } from './dom.js';
 import { sendToExtension } from './connection.js';
 import { openStepEditModal } from './modal.js';
+import * as api from './api.js';
 
 // ---------------- Step List Rendering ----------------
 
@@ -127,6 +128,7 @@ export function persistActiveTestCase() {
   const tc = getTestCase(state.activeTestCaseId);
   if (!tc) return;
   sendToExtension('WA_SAVE_TEST_CASE', { testCase: tc });
+  api.saveTestCasesToServer();
   renderTestCaseSelectors();
 }
 

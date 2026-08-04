@@ -34,6 +34,7 @@ import {
   wireRunEvents,
   wireReportEvents,
 } from './js/events.js';
+import * as api from './js/api.js';
 
 // ---------------- Port Message Handler ----------------
 
@@ -58,6 +59,10 @@ function handlePortMessage(message) {
       if (els.runModeSelect && els.runModeSelect.value === 'suite') {
         renderSuitePreview();
       }
+      // Save data received from extension to server
+      api.saveObjectsToServer();
+      api.saveTestCasesToServer();
+      api.saveTestSuitesToServer();
       // Reports are loaded from server API, not from extension
       loadReportsFromServer();
       break;
@@ -65,6 +70,8 @@ function handlePortMessage(message) {
       if (!state.objects.some((o) => o.id === message.entry.id)) state.objects.push(message.entry);
       renderStepObjectOptions();
       renderSteps();
+      // Save updated objects to server
+      api.saveObjectsToServer();
       break;
     case 'WA_EVT_STEP_ADDED': {
       let tc = getTestCase(state.activeTestCaseId);
@@ -77,6 +84,8 @@ function handlePortMessage(message) {
       tc.steps.push(message.step);
       renderSteps();
       persistActiveTestCase();
+      // Save updated test cases to server
+      api.saveTestCasesToServer();
       break;
     }
     case 'WA_EVT_RUN_STARTED':
@@ -101,7 +110,7 @@ function handlePortMessage(message) {
       state.running = false;
       setRunButtonsState(false);
       // Save report to server
-      saveReportToServer(message.report);
+      api.saveReportToServer(message.report);
       state.reports.unshift(message.report);
       renderReports();
       break;
@@ -147,7 +156,7 @@ function handlePortMessage(message) {
   }
 }
 
-// ---------------- Report API Helpers ----------------
+// ---------------- Report API Helpers (with render) ----------------
 
 async function loadReportsFromServer() {
   try {
@@ -156,30 +165,6 @@ async function loadReportsFromServer() {
     renderReports();
   } catch (e) {
     console.error('[Frontend] Failed to load reports from server:', e);
-  }
-}
-
-async function saveReportToServer(report) {
-  try {
-    console.log('[Frontend] Saving report to /api/reports:', report.id || report.name || 'unknown');
-    const res = await fetch('/api/reports', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(report),
-    });
-    const result = await res.json();
-  } catch (e) {
-    console.error('[Frontend] Failed to save report to server:', e);
-  }
-}
-
-async function clearReportsFromServer() {
-  try {
-    await fetch('/api/reports', { method: 'DELETE' });
-    state.reports = [];
-    renderReports();
-  } catch (e) {
-    console.error('Failed to clear reports:', e);
   }
 }
 
@@ -195,8 +180,15 @@ async function init() {
   // Wire shared events (connection, modal)
   wireSharedEvents();
 
-  // Load reports from server (independent of extension connection)
-  await loadReportsFromServer();
+  // Load all data from server (independent of extension connection)
+  await Promise.all([
+    api.loadReportsFromServer(),
+    api.loadObjectsFromServer(),
+    api.loadTestCasesFromServer(),
+    api.loadTestSuitesFromServer(),
+  ]);
+  // Render reports after loading
+  renderReports();
 
   // Initialize tabs with per-tab event wiring + refresh functions
   initTabs({
@@ -244,7 +236,8 @@ async function init() {
   const builderPanel = $('tab-builder');
   if (builderPanel) builderPanel.classList.add('active');
 
-  els.btnRunSuite.disabled = true;
+  // btnRunSuite is only available after run tab is loaded (lazy)
+  // setRunButtonsState will handle button states when run tab opens
 
   // Restore last connected extension ID
   const savedId = localStorage.getItem('tosca_ext_id');

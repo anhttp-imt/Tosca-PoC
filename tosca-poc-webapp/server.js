@@ -97,6 +97,123 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ==================== Objects (Data Elements) ====================
+
+  // GET /api/objects — load all objects from MongoDB
+  if (urlPath === '/api/objects' && req.method === 'GET') {
+    try {
+      const objects = await db.loadObjects();
+      sendJSON(res, 200, objects);
+    } catch (e) {
+      console.error('[API] GET /api/objects — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // POST /api/objects — save all objects to MongoDB
+  if (urlPath === '/api/objects' && req.method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      await db.saveAllObjects(body.objects || []);
+      sendJSON(res, 200, { success: true });
+    } catch (e) {
+      console.error('[API] POST /api/objects — error:', e.message);
+      sendJSON(res, 400, { error: e.message });
+    }
+    return;
+  }
+
+  // DELETE /api/objects — clear all objects
+  if (urlPath === '/api/objects' && req.method === 'DELETE') {
+    try {
+      await db.deleteAllObjects();
+      sendJSON(res, 200, { success: true });
+    } catch (e) {
+      console.error('[API] DELETE /api/objects — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // ==================== Test Cases ====================
+
+  // GET /api/testcases — load all test cases from MongoDB
+  if (urlPath === '/api/testcases' && req.method === 'GET') {
+    try {
+      const testCases = await db.loadTestCases();
+      sendJSON(res, 200, testCases);
+    } catch (e) {
+      console.error('[API] GET /api/testcases — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // POST /api/testcases — save all test cases to MongoDB
+  if (urlPath === '/api/testcases' && req.method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      await db.saveAllTestCases(body.testCases || []);
+      sendJSON(res, 200, { success: true });
+    } catch (e) {
+      console.error('[API] POST /api/testcases — error:', e.message);
+      sendJSON(res, 400, { error: e.message });
+    }
+    return;
+  }
+
+  // DELETE /api/testcases — clear all test cases
+  if (urlPath === '/api/testcases' && req.method === 'DELETE') {
+    try {
+      await db.deleteAllTestCases();
+      sendJSON(res, 200, { success: true });
+    } catch (e) {
+      console.error('[API] DELETE /api/testcases — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // ==================== Test Suites ====================
+
+  // GET /api/testsuites — load all test suites from MongoDB
+  if (urlPath === '/api/testsuites' && req.method === 'GET') {
+    try {
+      const testSuites = await db.loadTestSuites();
+      sendJSON(res, 200, testSuites);
+    } catch (e) {
+      console.error('[API] GET /api/testsuites — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // POST /api/testsuites — save all test suites to MongoDB
+  if (urlPath === '/api/testsuites' && req.method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      await db.saveAllTestSuites(body.testSuites || []);
+      sendJSON(res, 200, { success: true });
+    } catch (e) {
+      console.error('[API] POST /api/testsuites — error:', e.message);
+      sendJSON(res, 400, { error: e.message });
+    }
+    return;
+  }
+
+  // DELETE /api/testsuites — clear all test suites
+  if (urlPath === '/api/testsuites' && req.method === 'DELETE') {
+    try {
+      await db.deleteAllTestSuites();
+      sendJSON(res, 200, { success: true });
+    } catch (e) {
+      console.error('[API] DELETE /api/testsuites — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
   // ---- Static File Serving ----
   const safePath = path.normalize(urlPath === '/' ? '/index.html' : urlPath).replace(/^(\.\.[/\\])+/, '');
   const filePath = path.join(PUBLIC_DIR, safePath);
