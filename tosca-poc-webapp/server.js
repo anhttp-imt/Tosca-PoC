@@ -1,37 +1,13 @@
-// Zero-dependency static file server for the Tosca PoC Web App.
+// Static file server for the Tosca PoC Web App (with MongoDB backend).
 // Must run on http://localhost:8787 - this exact origin is whitelisted in the
 // extension's manifest.json "externally_connectable.matches".
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const db = require('./db');
 
 const PORT = 8787;
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const DATA_DIR = path.join(__dirname, 'data');
-const REPORTS_FILE = path.join(DATA_DIR, 'reports.json');
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-// Initialize reports file if not exists
-if (!fs.existsSync(REPORTS_FILE)) {
-  fs.writeFileSync(REPORTS_FILE, '[]', 'utf-8');
-}
-
-function loadReports() {
-  try {
-    const data = fs.readFileSync(REPORTS_FILE, 'utf-8');
-    return JSON.parse(data);
-  } catch (e) {
-    return [];
-  }
-}
-
-function saveReports(reports) {
-  fs.writeFileSync(REPORTS_FILE, JSON.stringify(reports, null, 2), 'utf-8');
-}
 
 function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -70,20 +46,24 @@ const MIME_TYPES = {
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
 
-  // GET /api/reports — load all reports from disk
+  // GET /api/reports — load all reports from MongoDB
   if (urlPath === '/api/reports' && req.method === 'GET') {
-    const reports = loadReports();
-    sendJSON(res, 200, reports);
+    try {
+      const reports = await db.loadReports();
+      sendJSON(res, 200, reports);
+    } catch (e) {
+      console.error('[API] GET /api/reports — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
     return;
   }
 
-  // POST /api/reports — save a new report to disk
+  // POST /api/reports — save a new report to MongoDB
   if (urlPath === '/api/reports' && req.method === 'POST') {
     try {
       const body = await parseBody(req);
-      const reports = loadReports();
-      reports.unshift(body);
-      saveReports(reports);
+      body.id = body.id || `report-${Date.now()}`;
+      await db.saveReport(body);
       sendJSON(res, 201, { success: true });
     } catch (e) {
       console.error('[API] POST /api/reports — error:', e.message);
@@ -94,17 +74,26 @@ const server = http.createServer(async (req, res) => {
 
   // DELETE /api/reports — clear all reports
   if (urlPath === '/api/reports' && req.method === 'DELETE') {
-    saveReports([]);
-    sendJSON(res, 200, { success: true });
+    try {
+      await db.deleteAllReports();
+      sendJSON(res, 200, { success: true });
+    } catch (e) {
+      console.error('[API] DELETE /api/reports — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
     return;
   }
 
   // DELETE /api/reports/:id — delete a single report
   if (urlPath.startsWith('/api/reports/') && req.method === 'DELETE') {
-    const reportId = urlPath.split('/').pop();
-    const reports = loadReports().filter((r) => r.id !== reportId);
-    saveReports(reports);
-    sendJSON(res, 200, { success: true });
+    try {
+      const reportId = urlPath.split('/').pop();
+      await db.deleteReport(reportId);
+      sendJSON(res, 200, { success: true });
+    } catch (e) {
+      console.error('[API] DELETE /api/reports/:id — error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
     return;
   }
 
@@ -137,6 +126,20 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
+// Connect to database (MongoDB or JSON fallback) on startup
+db.connect();
+
 server.listen(PORT, () => {
   console.log(`Tosca PoC Web App: http://localhost:${PORT}`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  await db.close();
+  server.close(() => process.exit(0));
+});
+
+process.on('SIGTERM', async () => {
+  await db.close();
+  server.close(() => process.exit(0));
 });
