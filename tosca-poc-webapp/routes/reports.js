@@ -10,7 +10,6 @@ exports.handle = async (req, res, { parseBody, sendJSON }) => {
       const reports = await db.loadReports();
       sendJSON(res, 200, reports);
     } catch (e) {
-      console.error('[API] GET /api/reports — error:', e.message);
       sendJSON(res, 500, { error: e.message });
     }
     return true;
@@ -24,7 +23,6 @@ exports.handle = async (req, res, { parseBody, sendJSON }) => {
       await db.saveReport(body);
       sendJSON(res, 201, { success: true });
     } catch (e) {
-      console.error('[API] POST /api/reports — error:', e.message);
       sendJSON(res, 400, { error: e.message });
     }
     return true;
@@ -36,7 +34,6 @@ exports.handle = async (req, res, { parseBody, sendJSON }) => {
       await db.deleteAllReports();
       sendJSON(res, 200, { success: true });
     } catch (e) {
-      console.error('[API] DELETE /api/reports — error:', e.message);
       sendJSON(res, 500, { error: e.message });
     }
     return true;
@@ -49,7 +46,6 @@ exports.handle = async (req, res, { parseBody, sendJSON }) => {
       await db.deleteReport(reportId);
       sendJSON(res, 200, { success: true });
     } catch (e) {
-      console.error('[API] DELETE /api/reports/:id — error:', e.message);
       sendJSON(res, 500, { error: e.message });
     }
     return true;

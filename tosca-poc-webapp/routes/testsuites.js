@@ -10,7 +10,6 @@ exports.handle = async (req, res, { parseBody, sendJSON }) => {
       const testSuites = await db.loadTestSuites();
       sendJSON(res, 200, testSuites);
     } catch (e) {
-      console.error('[API] GET /api/testsuites — error:', e.message);
       sendJSON(res, 500, { error: e.message });
     }
     return true;
@@ -23,7 +22,6 @@ exports.handle = async (req, res, { parseBody, sendJSON }) => {
       await db.saveAllTestSuites(body.testSuites || []);
       sendJSON(res, 200, { success: true });
     } catch (e) {
-      console.error('[API] POST /api/testsuites — error:', e.message);
       sendJSON(res, 400, { error: e.message });
     }
     return true;
@@ -35,7 +33,6 @@ exports.handle = async (req, res, { parseBody, sendJSON }) => {
       await db.deleteAllTestSuites();
       sendJSON(res, 200, { success: true });
     } catch (e) {
-      console.error('[API] DELETE /api/testsuites — error:', e.message);
       sendJSON(res, 500, { error: e.message });
     }
     return true;

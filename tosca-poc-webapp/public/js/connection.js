@@ -34,7 +34,7 @@ export function connectToExtension(extId) {
     return;
   }
   try {
-    port = chrome.runtime.connect(extId, { name: 'tosca-poc-webapp' });
+    port = chrome.runtime.connect(extId, { name: 'sap-automation-poc-webapp' });
   } catch (e) {
     setConnectStatus(false, `Connection error: ${e.message}`);
     return;
@@ -48,7 +48,7 @@ export function connectToExtension(extId) {
   });
   connected = true;
   setConnectStatus(true, 'Connected');
-  localStorage.setItem('tosca_ext_id', extId);
+  localStorage.setItem('sap_automation_poc_ext_id', extId);
   sendToExtension('WA_LIST_TABS');
   sendToExtension('WA_GET_ALL_DATA');
 }

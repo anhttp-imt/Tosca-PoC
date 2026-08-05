@@ -240,7 +240,7 @@ async function init() {
   // setRunButtonsState will handle button states when run tab opens
 
   // Restore last connected extension ID
-  const savedId = localStorage.getItem('tosca_ext_id');
+  const savedId = localStorage.getItem('sap_automation_poc_ext_id');
   if (savedId) {
     els.extIdInput.value = savedId;
     connectToExtension(savedId);

@@ -1,4 +1,4 @@
-// Static file server for the Tosca PoC Web App (with MongoDB backend).
+// Static file server for the SAP Automation PoC Web App (with MongoDB backend).
 // Must run on http://localhost:8787 - this exact origin is whitelisted in the
 // extension's manifest.json "externally_connectable.matches".
 const http = require('http');
@@ -94,7 +94,7 @@ const server = http.createServer(async (req, res) => {
 db.connect();
 
 server.listen(PORT, () => {
-  console.log(`Tosca PoC Web App: http://localhost:${PORT}`);
+  console.log(`SAP Automation PoC Web App: http://localhost:${PORT}`);
 });
 
 // Graceful shutdown
