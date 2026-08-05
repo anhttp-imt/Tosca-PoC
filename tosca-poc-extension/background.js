@@ -651,6 +651,14 @@ chrome.runtime.onConnectExternal.addListener((port) => {
           cancelRun = true;
           break;
         }
+         case 'WA_SYNC_FROM_SERVER': {
+          // Web App sends merged data — update extension's chrome.storage
+          if (message.objects) await setAll(STORAGE_KEYS.OBJECTS, message.objects);
+          if (message.testCases) await setAll(STORAGE_KEYS.TEST_CASES, message.testCases);
+          if (message.testSuites) await setAll(STORAGE_KEYS.TEST_SUITES, message.testSuites);
+          notifyWebAppsDataChanged();
+          break;
+        }
         case 'WA_CLEAR_REPORTS': {
           await setAll(STORAGE_KEYS.REPORTS, []);
           break;

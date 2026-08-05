@@ -44,10 +44,34 @@ function handlePortMessage(message) {
     case 'WA_TABS_LIST':
       renderTabOptions(message.tabs || []);
       break;
-    case 'WA_ALL_DATA':
-      state.objects = message.objects || [];
-      state.testCases = message.testCases || [];
-      state.testSuites = message.testSuites || [];
+    case 'WA_ALL_DATA': {
+      // MongoDB is source of truth — merge extension data, don't overwrite.
+      const serverObjects = state.objects || [];
+      const serverTestCases = state.testCases || [];
+      const serverTestSuites = state.testSuites || [];
+      const extObjects = message.objects || [];
+      const extTestCases = message.testCases || [];
+      const extTestSuites = message.testSuites || [];
+
+      // Merge: server items take priority, extension-only items are appended
+      const serverObjIds = new Set(serverObjects.map(o => o.id));
+      state.objects = [
+        ...serverObjects,
+        ...extObjects.filter(o => !serverObjIds.has(o.id)),
+      ];
+
+      const serverTcIds = new Set(serverTestCases.map(t => t.id));
+      state.testCases = [
+        ...serverTestCases,
+        ...extTestCases.filter(t => !serverTcIds.has(t.id)),
+      ];
+
+      const serverSuiteIds = new Set(serverTestSuites.map(s => s.id));
+      state.testSuites = [
+        ...serverTestSuites,
+        ...extTestSuites.filter(s => !serverSuiteIds.has(s.id)),
+      ];
+
       state.variables = message.variables || {};
       renderVariables();
       renderStepObjectOptions();
@@ -59,13 +83,23 @@ function handlePortMessage(message) {
       if (els.runModeSelect && els.runModeSelect.value === 'suite') {
         renderSuitePreview();
       }
-      // Save data received from extension to server
+
+      // Save merged data to server
       api.saveObjectsToServer();
       api.saveTestCasesToServer();
       api.saveTestSuitesToServer();
+
+      // Sync merged data back to extension's chrome.storage
+      sendToExtension('WA_SYNC_FROM_SERVER', {
+        objects: state.objects,
+        testCases: state.testCases,
+        testSuites: state.testSuites,
+      });
+
       // Reports are loaded from server API, not from extension
       loadReportsFromServer();
       break;
+    }
     case 'WA_EVT_OBJECT_ADDED':
       if (!state.objects.some((o) => o.id === message.entry.id)) state.objects.push(message.entry);
       renderStepObjectOptions();
