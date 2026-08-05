@@ -6,6 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 
+// Routes
+const reportsRoutes = require('./routes/reports');
+const objectsRoutes = require('./routes/objects');
+const testcasesRoutes = require('./routes/testcases');
+const testsuitesRoutes = require('./routes/testsuites');
+
 const PORT = 8787;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -43,178 +49,19 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon',
 };
 
+// Route handlers in order
+const routes = [reportsRoutes, objectsRoutes, testcasesRoutes, testsuitesRoutes];
+
 const server = http.createServer(async (req, res) => {
-  const urlPath = req.url.split('?')[0];
-
-  // GET /api/reports — load all reports from MongoDB
-  if (urlPath === '/api/reports' && req.method === 'GET') {
-    try {
-      const reports = await db.loadReports();
-      sendJSON(res, 200, reports);
-    } catch (e) {
-      console.error('[API] GET /api/reports — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
+  // Try each route module
+  for (const route of routes) {
+    if (await route.handle(req, res, { parseBody, sendJSON })) {
+      return;
     }
-    return;
-  }
-
-  // POST /api/reports — save a new report to MongoDB
-  if (urlPath === '/api/reports' && req.method === 'POST') {
-    try {
-      const body = await parseBody(req);
-      body.id = body.id || `report-${Date.now()}`;
-      await db.saveReport(body);
-      sendJSON(res, 201, { success: true });
-    } catch (e) {
-      console.error('[API] POST /api/reports — error:', e.message);
-      sendJSON(res, 400, { error: e.message });
-    }
-    return;
-  }
-
-  // DELETE /api/reports — clear all reports
-  if (urlPath === '/api/reports' && req.method === 'DELETE') {
-    try {
-      await db.deleteAllReports();
-      sendJSON(res, 200, { success: true });
-    } catch (e) {
-      console.error('[API] DELETE /api/reports — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
-    }
-    return;
-  }
-
-  // DELETE /api/reports/:id — delete a single report
-  if (urlPath.startsWith('/api/reports/') && req.method === 'DELETE') {
-    try {
-      const reportId = urlPath.split('/').pop();
-      await db.deleteReport(reportId);
-      sendJSON(res, 200, { success: true });
-    } catch (e) {
-      console.error('[API] DELETE /api/reports/:id — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
-    }
-    return;
-  }
-
-  // ==================== Objects (Data Elements) ====================
-
-  // GET /api/objects — load all objects from MongoDB
-  if (urlPath === '/api/objects' && req.method === 'GET') {
-    try {
-      const objects = await db.loadObjects();
-      sendJSON(res, 200, objects);
-    } catch (e) {
-      console.error('[API] GET /api/objects — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
-    }
-    return;
-  }
-
-  // POST /api/objects — save all objects to MongoDB
-  if (urlPath === '/api/objects' && req.method === 'POST') {
-    try {
-      const body = await parseBody(req);
-      await db.saveAllObjects(body.objects || []);
-      sendJSON(res, 200, { success: true });
-    } catch (e) {
-      console.error('[API] POST /api/objects — error:', e.message);
-      sendJSON(res, 400, { error: e.message });
-    }
-    return;
-  }
-
-  // DELETE /api/objects — clear all objects
-  if (urlPath === '/api/objects' && req.method === 'DELETE') {
-    try {
-      await db.deleteAllObjects();
-      sendJSON(res, 200, { success: true });
-    } catch (e) {
-      console.error('[API] DELETE /api/objects — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
-    }
-    return;
-  }
-
-  // ==================== Test Cases ====================
-
-  // GET /api/testcases — load all test cases from MongoDB
-  if (urlPath === '/api/testcases' && req.method === 'GET') {
-    try {
-      const testCases = await db.loadTestCases();
-      sendJSON(res, 200, testCases);
-    } catch (e) {
-      console.error('[API] GET /api/testcases — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
-    }
-    return;
-  }
-
-  // POST /api/testcases — save all test cases to MongoDB
-  if (urlPath === '/api/testcases' && req.method === 'POST') {
-    try {
-      const body = await parseBody(req);
-      await db.saveAllTestCases(body.testCases || []);
-      sendJSON(res, 200, { success: true });
-    } catch (e) {
-      console.error('[API] POST /api/testcases — error:', e.message);
-      sendJSON(res, 400, { error: e.message });
-    }
-    return;
-  }
-
-  // DELETE /api/testcases — clear all test cases
-  if (urlPath === '/api/testcases' && req.method === 'DELETE') {
-    try {
-      await db.deleteAllTestCases();
-      sendJSON(res, 200, { success: true });
-    } catch (e) {
-      console.error('[API] DELETE /api/testcases — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
-    }
-    return;
-  }
-
-  // ==================== Test Suites ====================
-
-  // GET /api/testsuites — load all test suites from MongoDB
-  if (urlPath === '/api/testsuites' && req.method === 'GET') {
-    try {
-      const testSuites = await db.loadTestSuites();
-      sendJSON(res, 200, testSuites);
-    } catch (e) {
-      console.error('[API] GET /api/testsuites — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
-    }
-    return;
-  }
-
-  // POST /api/testsuites — save all test suites to MongoDB
-  if (urlPath === '/api/testsuites' && req.method === 'POST') {
-    try {
-      const body = await parseBody(req);
-      await db.saveAllTestSuites(body.testSuites || []);
-      sendJSON(res, 200, { success: true });
-    } catch (e) {
-      console.error('[API] POST /api/testsuites — error:', e.message);
-      sendJSON(res, 400, { error: e.message });
-    }
-    return;
-  }
-
-  // DELETE /api/testsuites — clear all test suites
-  if (urlPath === '/api/testsuites' && req.method === 'DELETE') {
-    try {
-      await db.deleteAllTestSuites();
-      sendJSON(res, 200, { success: true });
-    } catch (e) {
-      console.error('[API] DELETE /api/testsuites — error:', e.message);
-      sendJSON(res, 500, { error: e.message });
-    }
-    return;
   }
 
   // ---- Static File Serving ----
+  const urlPath = req.url.split('?')[0];
   const safePath = path.normalize(urlPath === '/' ? '/index.html' : urlPath).replace(/^(\.\.[/\\])+/, '');
   const filePath = path.join(PUBLIC_DIR, safePath);
 
